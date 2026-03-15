@@ -1,0 +1,35 @@
+﻿src/components/auth/LoginForm.tsx(17,34): error TS6137: Cannot import type declaration files. Consider importing 'auth.types' instead of '@types/auth.types'.
+src/components/auth/RegisterForm.tsx(22,30): error TS6137: Cannot import type declaration files. Consider importing 'auth.types' instead of '@types/auth.types'.
+src/components/courses/AttachmentList.tsx(20,28): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/components/courses/CourseCard.tsx(16,24): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/components/courses/CourseDetails.tsx(21,24): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/components/courses/CourseDetails.tsx(111,27): error TS2552: Cannot find name 'index'. Did you mean '_index'?
+src/components/courses/CourseForm.tsx(18,60): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/components/courses/CourseForm.tsx(162,11): error TS2322: Type '(e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown; }>) => void' is not assignable to type '(event: ChangeEvent<Omit<HTMLInputElement, "value"> & { value: "beginner"; }> | (Event & { target: { value: "beginner"; name: string; }; }) | ChangeEvent<...> | (Event & { ...; }) | ChangeEvent<...> | (Event & { ...; }), child: ReactNode) => void'.
+  Types of parameters 'e' and 'event' are incompatible.
+    Type 'ChangeEvent<Omit<HTMLInputElement, "value"> & { value: "beginner"; }> | (Event & { target: { value: "beginner"; name: string; }; }) | ChangeEvent<...> | (Event & { ...; }) | ChangeEvent<...> | (Event & { ...; })' is not assignable to type 'ChangeEvent<HTMLInputElement | { name?: string | undefined; value: unknown; }>'.
+      Type 'Event & { target: { value: "beginner"; name: string; }; }' is missing the following properties from type 'ChangeEvent<HTMLInputElement | { name?: string | undefined; value: unknown; }>': nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+src/components/courses/CourseForm.tsx(195,11): error TS2322: Type '(e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown; }>) => void' is not assignable to type '(event: ChangeEvent<Omit<HTMLInputElement, "value"> & { value: string; }> | (Event & { target: { value: string; name: string; }; }), child: ReactNode) => void'.
+  Types of parameters 'e' and 'event' are incompatible.
+    Type 'ChangeEvent<Omit<HTMLInputElement, "value"> & { value: string; }> | (Event & { target: { value: string; name: string; }; })' is not assignable to type 'ChangeEvent<HTMLInputElement | { name?: string | undefined; value: unknown; }>'.
+      Type 'Event & { target: { value: string; name: string; }; }' is missing the following properties from type 'ChangeEvent<HTMLInputElement | { name?: string | undefined; value: unknown; }>': nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+src/components/courses/LessonList.tsx(19,24): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/components/courses/ModuleList.tsx(17,24): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/components/payment/PaymentForm.tsx(63,13): error TS6133: 'paymentData' is declared but its value is never read.
+src/components/quiz/QuizForm.tsx(5,27): error TS6133: 'useEffect' is declared but its value is never read.
+src/components/quiz/QuizForm.tsx(18,3): error TS6133: 'Divider' is declared but its value is never read.
+src/components/quiz/QuizQuestion.tsx(7,3): error TS6133: 'Box' is declared but its value is never read.
+src/pages/CourseCatalogPage.tsx(22,31): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/pages/CreateCoursePage.tsx(12,34): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/pages/CreateCoursePage.tsx(43,23): error TS2322: Type '(data: CreateCourseData) => Promise<void>' is not assignable to type '(data: CreateCourseData | UpdateCourseData) => Promise<void>'.
+  Types of parameters 'data' and 'data' are incompatible.
+    Type 'CreateCourseData | UpdateCourseData' is not assignable to type 'CreateCourseData'.
+      Type 'UpdateCourseData' is not assignable to type 'CreateCourseData'.
+        Types of property 'title' are incompatible.
+          Type 'string | undefined' is not assignable to type 'string'.
+            Type 'undefined' is not assignable to type 'string'.
+src/pages/EditCoursePage.tsx(22,34): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/services/auth.service.ts(12,8): error TS6137: Cannot import type declaration files. Consider importing 'auth.types' instead of '@types/auth.types'.
+src/services/course.service.ts(13,8): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.
+src/store/slices/authSlice.ts(15,8): error TS6137: Cannot import type declaration files. Consider importing 'auth.types' instead of '@types/auth.types'.
+src/store/slices/courseSlice.ts(13,8): error TS6137: Cannot import type declaration files. Consider importing 'course.types' instead of '@types/course.types'.

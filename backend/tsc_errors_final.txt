@@ -1,0 +1,30 @@
+﻿src/controllers/course.controller.ts(89,50): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/course.controller.ts(242,53): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/course.controller.ts(304,38): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/course.controller.ts(365,54): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/course.controller.ts(426,56): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(66,50): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(151,63): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(221,48): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(320,60): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(419,73): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(498,58): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/middleware/cache.middleware.ts(180,17): error TS6133: 'req' is declared but its value is never read.
+src/middleware/cache.middleware.ts(231,17): error TS6133: 'req' is declared but its value is never read.
+src/middleware/cache.middleware.ts(231,31): error TS6133: 'res' is declared but its value is never read.
+src/middleware/cache.middleware.ts(259,11): error TS6133: 'req' is declared but its value is never read.
+src/middleware/cache.middleware.ts(278,17): error TS6133: 'req' is declared but its value is never read.
+src/middleware/logging.middleware.ts(130,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/services/certificate.service.ts(72,3): error TS6133: 'pdfBuffer' is declared but its value is never read.

@@ -1,0 +1,932 @@
+/**
+ * Course Service
+ * Handles course management operations including creation, updates, modules, and lessons
+ */
+
+import Course, { IModule, ILesson, CourseLevel, LessonType } from '../models/Course';
+import mongoose from 'mongoose';
+import * as redis from '../config/redis.config';
+
+// DTOs and Interfaces
+export interface CreateCourseDTO {
+  title: string;
+  description: string;
+  category: string;
+  level: CourseLevel;
+  price: number;
+  thumbnail?: string;
+  prerequisites?: string[];
+  learningObjectives?: string[];
+}
+
+export interface UpdateCourseDTO {
+  title?: string;
+  description?: string;
+  category?: string;
+  level?: CourseLevel;
+  price?: number;
+  thumbnail?: string;
+  prerequisites?: string[];
+  learningObjectives?: string[];
+}
+
+export interface ModuleDTO {
+  title: string;
+  description: string;
+  order: number;
+}
+
+export interface LessonDTO {
+  title: string;
+  description: string;
+  type: LessonType;
+  content: string;
+  videoUrl?: string;
+  duration: number;
+  order: number;
+  resources?: Array<{
+    title: string;
+    url: string;
+    type: string;
+  }>;
+}
+
+export interface CourseFilters {
+  category?: string;
+  level?: CourseLevel;
+  isPublished?: boolean;
+  instructorId?: string;
+  searchTerm?: string;
+  minPrice?: number;
+  maxPrice?: number;
+}
+
+export interface PaginationParams {
+  page: number;
+  limit: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface CourseDTO {
+  id: string;
+  title: string;
+  description: string;
+  instructorId: string;
+  instructor?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+  };
+  category: string;
+  level: CourseLevel;
+  price: number;
+  thumbnail?: string;
+  modules: IModule[];
+  prerequisites: string[];
+  learningObjectives: string[];
+  isPublished: boolean;
+  enrollmentCount: number;
+  rating: number;
+  reviewCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Course Service Interface
+ */
+export interface ICourseService {
+  createCourse(courseData: CreateCourseDTO, instructorId: string): Promise<CourseDTO>;
+  updateCourse(courseId: string, updates: UpdateCourseDTO, instructorId: string): Promise<CourseDTO>;
+  deleteCourse(courseId: string, instructorId: string): Promise<void>;
+  getCourse(courseId: string): Promise<CourseDTO>;
+  listCourses(filters: CourseFilters, pagination: PaginationParams): Promise<PaginatedResult<CourseDTO>>;
+  addModule(courseId: string, moduleData: ModuleDTO, instructorId: string): Promise<IModule>;
+  updateModule(courseId: string, moduleId: string, updates: ModuleDTO, instructorId: string): Promise<IModule>;
+  deleteModule(courseId: string, moduleId: string, instructorId: string): Promise<void>;
+  addLesson(courseId: string, moduleId: string, lessonData: LessonDTO, instructorId: string): Promise<ILesson>;
+  updateLesson(courseId: string, moduleId: string, lessonId: string, updates: LessonDTO, instructorId: string): Promise<ILesson>;
+  deleteLesson(courseId: string, moduleId: string, lessonId: string, instructorId: string): Promise<void>;
+  publishCourse(courseId: string, instructorId: string): Promise<CourseDTO>;
+  unpublishCourse(courseId: string, instructorId: string): Promise<CourseDTO>;
+}
+
+/**
+ * Course Service Implementation
+ */
+class CourseService implements ICourseService {
+  private readonly COURSE_CACHE_PREFIX = 'course:';
+  private readonly COURSE_LIST_CACHE_PREFIX = 'courses:list:';
+  private readonly CACHE_TTL = 300; // 5 minutes
+
+  /**
+   * Create a new course
+   * 
+   * Requirements:
+   * - 1.2.1: Allow instructors to create courses
+   * - Title must be unique per instructor
+   * - All required fields must be validated
+   */
+  async createCourse(courseData: CreateCourseDTO, instructorId: string): Promise<CourseDTO> {
+    try {
+      // Validate instructor ID
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Check for duplicate title for this instructor
+      const existingCourse = await Course.findOne({
+        instructorId: new mongoose.Types.ObjectId(instructorId),
+        title: courseData.title,
+      }).lean().exec();
+
+      if (existingCourse) {
+        throw new Error('A course with this title already exists for this instructor');
+      }
+
+      // Create course
+      const course = new Course({
+        ...courseData,
+        instructorId: new mongoose.Types.ObjectId(instructorId),
+        modules: [],
+        isPublished: false,
+        enrollmentCount: 0,
+        rating: 0,
+        reviewCount: 0,
+      });
+
+      await course.save();
+
+      // Invalidate course list cache
+      await this.invalidateCourseListCache();
+
+      return this.mapCourseToDTO(course);
+    } catch (error) {
+      console.error('Create course error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update an existing course
+   * 
+   * Requirements:
+   * - 1.2.5: Allow instructors to update their own courses
+   * - Verify instructor ownership
+   */
+  async updateCourse(courseId: string, updates: UpdateCourseDTO, instructorId: string): Promise<CourseDTO> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only update your own courses');
+      }
+
+      // If title is being updated, check for duplicates
+      if (updates.title && updates.title !== course.title) {
+        const existingCourse = await Course.findOne({
+          instructorId: new mongoose.Types.ObjectId(instructorId),
+          title: updates.title,
+          _id: { $ne: courseId },
+        }).lean().exec();
+
+        if (existingCourse) {
+          throw new Error('A course with this title already exists for this instructor');
+        }
+      }
+
+      // Update course
+      Object.assign(course, updates);
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return this.mapCourseToDTO(course);
+    } catch (error) {
+      console.error('Update course error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a course
+   * 
+   * Requirements:
+   * - 1.2.5: Allow instructors to delete their own courses
+   * - Prevent deletion if course has active enrollments
+   */
+  async deleteCourse(courseId: string, instructorId: string): Promise<void> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only delete your own courses');
+      }
+
+      // Check for active enrollments
+      if (course.enrollmentCount > 0) {
+        throw new Error('Cannot delete course with active enrollments');
+      }
+
+      // Delete course
+      await Course.findByIdAndDelete(courseId).exec();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+    } catch (error) {
+      console.error('Delete course error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get course by ID
+   * 
+   * Requirements:
+   * - 1.2.4: Display course information
+   * - Implement caching for performance
+   */
+  async getCourse(courseId: string): Promise<CourseDTO> {
+    try {
+      // Validate ID
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+
+      // Check cache first
+      const cacheKey = `${this.COURSE_CACHE_PREFIX}${courseId}`;
+      const cachedCourse = await redis.get(cacheKey);
+
+      if (cachedCourse) {
+        return JSON.parse(cachedCourse);
+      }
+
+      // Fetch from database
+      const course = await Course.findById(courseId)
+        .populate('instructorId', 'firstName lastName email')
+        .lean()
+        .exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      const courseDTO = this.mapCourseToDTO(course);
+
+      // Cache the result
+      await redis.set(cacheKey, JSON.stringify(courseDTO), this.CACHE_TTL);
+
+      return courseDTO;
+    } catch (error) {
+      console.error('Get course error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * List courses with filters and pagination
+   * 
+   * Requirements:
+   * - 1.2.4: Provide course listing with pagination
+   * - Support filtering and search
+   */
+  async listCourses(
+    filters: CourseFilters,
+    pagination: PaginationParams
+  ): Promise<PaginatedResult<CourseDTO>> {
+    try {
+      // Build query
+      const query: any = {};
+
+      if (filters.category) {
+        // Support partial, case-insensitive matching for category so users can type "computer" and still find "Computer Science" etc.
+        query.category = { $regex: filters.category, $options: 'i' };
+      }
+
+      if (filters.level) {
+        query.level = filters.level;
+      }
+
+      if (filters.isPublished !== undefined) {
+        query.isPublished = filters.isPublished;
+      }
+
+      if (filters.instructorId) {
+        if (!mongoose.Types.ObjectId.isValid(filters.instructorId)) {
+          throw new Error('Invalid instructor ID');
+        }
+        query.instructorId = new mongoose.Types.ObjectId(filters.instructorId);
+      }
+
+      if (filters.searchTerm) {
+        query.$or = [
+          { title: { $regex: filters.searchTerm, $options: 'i' } },
+          { description: { $regex: filters.searchTerm, $options: 'i' } },
+        ];
+      }
+
+      if (filters.minPrice !== undefined || filters.maxPrice !== undefined) {
+        query.price = {};
+        if (filters.minPrice !== undefined) {
+          query.price.$gte = filters.minPrice;
+        }
+        if (filters.maxPrice !== undefined) {
+          query.price.$lte = filters.maxPrice;
+        }
+      }
+
+      // Calculate pagination
+      const page = Math.max(1, pagination.page);
+      const limit = Math.min(100, Math.max(1, pagination.limit));
+      const skip = (page - 1) * limit;
+
+      // Build sort
+      const sortBy = pagination.sortBy || 'createdAt';
+      const sortOrder = pagination.sortOrder === 'asc' ? 1 : -1;
+      const sort: any = { [sortBy]: sortOrder };
+
+      // Execute query
+      const [courses, total] = await Promise.all([
+        Course.find(query)
+          .populate('instructorId', 'firstName lastName email')
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+          .lean()
+          .exec(),
+        Course.countDocuments(query).exec(),
+      ]);
+
+      // Map to DTOs
+      const data = courses.map(course => this.mapCourseToDTO(course));
+
+      // Calculate total pages
+      const totalPages = Math.ceil(total / limit);
+
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages,
+      };
+    } catch (error) {
+      console.error('List courses error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add a module to a course
+   * 
+   * Requirements:
+   * - 1.2.2: Allow instructors to add modules to courses
+   */
+  async addModule(courseId: string, moduleData: ModuleDTO, instructorId: string): Promise<IModule> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only modify your own courses');
+      }
+
+      // Create module
+      const newModule: any = {
+        _id: new mongoose.Types.ObjectId(),
+        ...moduleData,
+        lessons: [],
+      };
+
+      course.modules.push(newModule);
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return newModule;
+    } catch (error) {
+      console.error('Add module error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update a module
+   * 
+   * Requirements:
+   * - 1.2.2: Allow instructors to update modules
+   */
+  async updateModule(
+    courseId: string,
+    moduleId: string,
+    updates: ModuleDTO,
+    instructorId: string
+  ): Promise<IModule> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(moduleId)) {
+        throw new Error('Invalid module ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only modify your own courses');
+      }
+
+      // Find and update module
+      const module = (course.modules as any).id(moduleId);
+
+      if (!module) {
+        throw new Error('Module not found');
+      }
+
+      Object.assign(module, updates);
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return module;
+    } catch (error) {
+      console.error('Update module error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a module
+   * 
+   * Requirements:
+   * - 1.2.2: Allow instructors to delete modules
+   */
+  async deleteModule(courseId: string, moduleId: string, instructorId: string): Promise<void> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(moduleId)) {
+        throw new Error('Invalid module ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only modify your own courses');
+      }
+
+      // Remove module
+      const moduleIndex = course.modules.findIndex(m => m._id.toString() === moduleId);
+
+      if (moduleIndex === -1) {
+        throw new Error('Module not found');
+      }
+
+      course.modules.splice(moduleIndex, 1);
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+    } catch (error) {
+      console.error('Delete module error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add a lesson to a module
+   * 
+   * Requirements:
+   * - 1.2.2: Allow instructors to add lessons to modules
+   */
+  async addLesson(
+    courseId: string,
+    moduleId: string,
+    lessonData: LessonDTO,
+    instructorId: string
+  ): Promise<ILesson> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(moduleId)) {
+        throw new Error('Invalid module ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only modify your own courses');
+      }
+
+      // Find module
+      const module = (course.modules as any).id(moduleId);
+
+      if (!module) {
+        throw new Error('Module not found');
+      }
+
+      // Create lesson
+      const newLesson: any = {
+        _id: new mongoose.Types.ObjectId(),
+        ...lessonData,
+        resources: lessonData.resources || [],
+        attachments: [],
+      };
+
+      module.lessons.push(newLesson);
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return newLesson;
+    } catch (error) {
+      console.error('Add lesson error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update a lesson
+   * 
+   * Requirements:
+   * - 1.2.2: Allow instructors to update lessons
+   */
+  async updateLesson(
+    courseId: string,
+    moduleId: string,
+    lessonId: string,
+    updates: LessonDTO,
+    instructorId: string
+  ): Promise<ILesson> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(moduleId)) {
+        throw new Error('Invalid module ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(lessonId)) {
+        throw new Error('Invalid lesson ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only modify your own courses');
+      }
+
+      // Find module
+      const module = (course.modules as any).id(moduleId);
+
+      if (!module) {
+        throw new Error('Module not found');
+      }
+
+      // Find and update lesson
+      const lesson = module.lessons.id(lessonId);
+
+      if (!lesson) {
+        throw new Error('Lesson not found');
+      }
+
+      Object.assign(lesson, updates);
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return lesson;
+    } catch (error) {
+      console.error('Update lesson error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a lesson
+   * 
+   * Requirements:
+   * - 1.2.2: Allow instructors to delete lessons
+   */
+  async deleteLesson(
+    courseId: string,
+    moduleId: string,
+    lessonId: string,
+    instructorId: string
+  ): Promise<void> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(moduleId)) {
+        throw new Error('Invalid module ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(lessonId)) {
+        throw new Error('Invalid lesson ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only modify your own courses');
+      }
+
+      // Find module
+      const module = (course.modules as any).id(moduleId);
+
+      if (!module) {
+        throw new Error('Module not found');
+      }
+
+      // Remove lesson
+      const lessonIndex = module.lessons.findIndex((l: any) => l._id.toString() === lessonId);
+
+      if (lessonIndex === -1) {
+        throw new Error('Lesson not found');
+      }
+
+      module.lessons.splice(lessonIndex, 1);
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+    } catch (error) {
+      console.error('Delete lesson error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Publish a course
+   * 
+   * Requirements:
+   * - 1.2.3: Allow instructors to publish courses
+   * - Require at least 1 module with lessons
+   */
+  async publishCourse(courseId: string, instructorId: string): Promise<CourseDTO> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only publish your own courses');
+      }
+
+      // Validate course has content
+      if (course.modules.length === 0) {
+        throw new Error('Course must have at least one module before publishing');
+      }
+
+      const hasLessons = course.modules.some(module => module.lessons.length > 0);
+      if (!hasLessons) {
+        throw new Error('Course must have at least one lesson before publishing');
+      }
+
+      // Publish course
+      course.isPublished = true;
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return this.mapCourseToDTO(course);
+    } catch (error) {
+      console.error('Publish course error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unpublish a course
+   * 
+   * Requirements:
+   * - 1.2.3: Allow instructors to unpublish courses
+   */
+  async unpublishCourse(courseId: string, instructorId: string): Promise<CourseDTO> {
+    try {
+      // Validate IDs
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      // Find course and verify ownership
+      const course = await Course.findById(courseId).exec();
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only unpublish your own courses');
+      }
+
+      // Unpublish course
+      course.isPublished = false;
+      await course.save();
+
+      // Invalidate caches
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return this.mapCourseToDTO(course);
+    } catch (error) {
+      console.error('Unpublish course error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Map Course document to DTO
+   * @private
+   */
+  private mapCourseToDTO(course: any): CourseDTO {
+    const rawInstructor = course?.instructorId;
+    const instructorObject =
+      rawInstructor && typeof rawInstructor === 'object' && (rawInstructor._id || rawInstructor.id);
+
+    const instructorId = instructorObject
+      ? String(rawInstructor._id?.toString?.() ?? rawInstructor.id ?? '')
+      : String(rawInstructor?.toString?.() ?? rawInstructor ?? '');
+
+    const instructor =
+      instructorObject && (rawInstructor.firstName || rawInstructor.lastName || rawInstructor.email)
+        ? {
+            id: instructorId,
+            firstName: rawInstructor.firstName ?? '',
+            lastName: rawInstructor.lastName ?? '',
+            email: rawInstructor.email,
+          }
+        : undefined;
+
+    return {
+      id: course._id.toString(),
+      title: course.title,
+      description: course.description,
+      instructorId,
+      instructor,
+      category: course.category,
+      level: course.level,
+      price: course.price,
+      thumbnail: course.thumbnail,
+      modules: course.modules,
+      prerequisites: course.prerequisites,
+      learningObjectives: course.learningObjectives,
+      isPublished: course.isPublished,
+      enrollmentCount: course.enrollmentCount,
+      rating: course.rating,
+      reviewCount: course.reviewCount,
+      createdAt: course.createdAt,
+      updatedAt: course.updatedAt,
+    };
+  }
+
+  /**
+   * Invalidate course cache
+   * @private
+   */
+  private async invalidateCourseCache(courseId: string): Promise<void> {
+    const cacheKey = `${this.COURSE_CACHE_PREFIX}${courseId}`;
+    await redis.del(cacheKey);
+  }
+
+  /**
+   * Invalidate course list cache
+   * @private
+   */
+  private async invalidateCourseListCache(): Promise<void> {
+    // In a real implementation, you might want to use a more sophisticated cache invalidation strategy
+    // For now, we'll just delete all keys matching the pattern
+    const pattern = `${this.COURSE_LIST_CACHE_PREFIX}*`;
+    const keys = await redis.getRedisClient().keys(pattern);
+    if (keys.length > 0) {
+      await Promise.all(keys.map((key: string) => redis.del(key)));
+    }
+  }
+}
+
+// Export singleton instance
+export const courseService = new CourseService();
+export default courseService;

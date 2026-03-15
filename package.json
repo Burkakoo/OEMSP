@@ -1,0 +1,24 @@
+{
+  "name": "mern-education-platform",
+  "version": "1.0.0",
+  "description": "MERN Education Platform - Learning Management System",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "lint:fix": "npm run lint:fix --workspaces",
+    "format": "npm run format --workspaces",
+    "format:check": "npm run format:check --workspaces"
+  },
+  "keywords": ["education", "lms", "mern", "monorepo"],
+  "author": "",
+  "license": "MIT"
+}

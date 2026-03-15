@@ -1,0 +1,58 @@
+﻿src/controllers/course.controller.ts(89,50): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/course.controller.ts(242,53): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/course.controller.ts(304,38): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/course.controller.ts(365,54): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/course.controller.ts(426,56): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(66,50): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(151,63): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(221,48): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(320,60): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(419,73): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/controllers/module.controller.ts(498,58): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+src/middleware/cache.middleware.ts(180,17): error TS6133: 'req' is declared but its value is never read.
+src/middleware/cache.middleware.ts(231,17): error TS6133: 'req' is declared but its value is never read.
+src/middleware/cache.middleware.ts(231,31): error TS6133: 'res' is declared but its value is never read.
+src/middleware/cache.middleware.ts(259,11): error TS6133: 'req' is declared but its value is never read.
+src/middleware/cache.middleware.ts(278,17): error TS6133: 'req' is declared but its value is never read.
+src/middleware/logging.middleware.ts(130,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/services/certificate.service.ts(72,3): error TS6133: 'pdfBuffer' is declared but its value is never read.
+src/services/course.service.ts(6,18): error TS6133: 'ICourse' is declared but its value is never read.
+src/services/course.service.ts(6,70): error TS6133: 'IAttachment' is declared but its value is never read.
+src/services/course.service.ts(495,37): error TS2339: Property 'id' does not exist on type 'IModule[]'.
+src/services/course.service.ts(600,37): error TS2339: Property 'id' does not exist on type 'IModule[]'.
+src/services/course.service.ts(668,37): error TS2339: Property 'id' does not exist on type 'IModule[]'.
+src/services/course.service.ts(734,37): error TS2339: Property 'id' does not exist on type 'IModule[]'.
+src/services/course.service.ts(741,52): error TS7006: Parameter 'l' implicitly has an 'any' type.
+src/services/course.service.ts(897,30): error TS2339: Property 'keys' does not exist on type 'typeof import("C:/Users/BURKA/Desktop/IEMSP/backend/src/config/redis.config")'.
+src/services/course.service.ts(899,34): error TS7006: Parameter 'key' implicitly has an 'any' type.
+src/services/enrollment.service.ts(5,10): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheGet'.
+src/services/enrollment.service.ts(5,20): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheSet'.
+src/services/enrollment.service.ts(5,30): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheDelete'.
+src/services/payment.service.ts(9,10): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheGet'.
+src/services/payment.service.ts(9,20): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheSet'.
+src/services/payment.service.ts(9,30): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheDelete'.
+src/services/payment.service.ts(58,3): error TS6133: 'metadata' is declared but its value is never read.
+src/services/payment.service.ts(81,3): error TS6133: 'metadata' is declared but its value is never read.
+src/services/payment.service.ts(101,3): error TS6133: 'metadata' is declared but its value is never read.
+src/services/payment.service.ts(119,3): error TS6133: 'metadata' is declared but its value is never read.
+src/services/payment.service.ts(226,11): error TS6133: 'failedPayment' is declared but its value is never read.
+src/services/payment.service.ts(395,7): error TS2367: This comparison appears to be unintentional because the types 'PaymentStatus.COMPLETED' and 'PaymentStatus.REFUNDED' have no overlap.
+src/services/quiz.service.ts(6,10): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheGet'.
+src/services/quiz.service.ts(6,20): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheSet'.
+src/services/quiz.service.ts(6,30): error TS2305: Module '"../utils/cache.utils"' has no exported member 'cacheDelete'.
+src/services/quiz.service.ts(138,41): error TS2345: Argument of type 'Partial<IQuestion> | undefined' is not assignable to parameter of type 'Partial<IQuestion>'.
+  Type 'undefined' is not assignable to type 'Partial<IQuestion>'.
+src/services/quiz.service.ts(202,43): error TS2345: Argument of type 'Partial<IQuestion> | undefined' is not assignable to parameter of type 'Partial<IQuestion>'.
+  Type 'undefined' is not assignable to type 'Partial<IQuestion>'.

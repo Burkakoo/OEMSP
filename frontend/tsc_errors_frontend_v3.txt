@@ -1,0 +1,44 @@
+﻿src/components/admin/PlatformStats.tsx(56,25): error TS6133: 'index' is declared but its value is never read.
+src/components/auth/LoginForm.tsx(17,34): error TS2307: Cannot find module '../types/auth.types' or its corresponding type declarations.
+src/components/auth/LoginForm.tsx(64,18): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/components/auth/RegisterForm.tsx(22,30): error TS2307: Cannot find module '../types/auth.types' or its corresponding type declarations.
+src/components/auth/RegisterForm.tsx(84,20): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/components/auth/RegisterForm.tsx(86,29): error TS2345: Argument of type '(prev: { [key: string]: string; }) => { [x: string]: string | undefined; }' is not assignable to parameter of type 'SetStateAction<{ [key: string]: string; }>'.
+  Type '(prev: { [key: string]: string; }) => { [x: string]: string | undefined; }' is not assignable to type '(prevState: { [key: string]: string; }) => { [key: string]: string; }'.
+    Type '{ [x: string]: string | undefined; }' is not assignable to type '{ [key: string]: string; }'.
+      'string' index signatures are incompatible.
+        Type 'string | undefined' is not assignable to type 'string'.
+          Type 'undefined' is not assignable to type 'string'.
+src/components/auth/RegisterForm.tsx(97,27): error TS2345: Argument of type '(prev: { [key: string]: string; }) => { confirmPassword: undefined; }' is not assignable to parameter of type 'SetStateAction<{ [key: string]: string; }>'.
+  Type '(prev: { [key: string]: string; }) => { confirmPassword: undefined; }' is not assignable to type '(prevState: { [key: string]: string; }) => { [key: string]: string; }'.
+    Type '{ confirmPassword: undefined; }' is not assignable to type '{ [key: string]: string; }'.
+      Property 'confirmPassword' is incompatible with index signature.
+        Type 'undefined' is not assignable to type 'string'.
+src/components/courses/AttachmentList.tsx(20,28): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/CourseCard.tsx(16,24): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/CourseDetails.tsx(21,24): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/CourseDetails.tsx(107,31): error TS7006: Parameter 'module' implicitly has an 'any' type.
+src/components/courses/CourseDetails.tsx(107,39): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/components/courses/CourseDetails.tsx(124,42): error TS7006: Parameter 'lesson' implicitly has an 'any' type.
+src/components/courses/CourseDetails.tsx(124,50): error TS7006: Parameter 'lessonIndex' implicitly has an 'any' type.
+src/components/courses/CourseForm.tsx(18,60): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/CourseForm.tsx(87,20): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/components/courses/LessonList.tsx(19,24): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/ModuleList.tsx(17,24): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/instructor/InstructorStats.tsx(56,25): error TS6133: 'index' is declared but its value is never read.
+src/components/payment/PaymentForm.tsx(63,13): error TS6133: 'paymentData' is declared but its value is never read.
+src/components/quiz/QuizForm.tsx(5,27): error TS6133: 'useEffect' is declared but its value is never read.
+src/components/quiz/QuizForm.tsx(18,3): error TS6133: 'Divider' is declared but its value is never read.
+src/components/quiz/QuizQuestion.tsx(7,3): error TS6133: 'Box' is declared but its value is never read.
+src/components/student/StudentStats.tsx(54,25): error TS6133: 'index' is declared but its value is never read.
+src/pages/CoursePlayerPage.tsx(90,54): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/pages/CoursePlayerPage.tsx(91,56): error TS7006: Parameter 'l' implicitly has an 'any' type.
+src/services/api.ts(31,5): error TS7053: Element implicitly has an 'any' type because expression of type '"Authorization"' can't be used to index type 'HeadersInit'.
+  Property 'Authorization' does not exist on type 'HeadersInit'.
+src/store/slices/authSlice.ts(15,8): error TS2307: Cannot find module '../types/auth.types' or its corresponding type declarations.
+src/store/slices/courseSlice.ts(9,3): error TS6133: 'Course' is declared but its value is never read.
+src/store/slices/courseSlice.ts(13,8): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/store/slices/courseSlice.ts(190,48): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/store/slices/courseSlice.ts(211,47): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/store/slices/courseSlice.ts(229,48): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/store/slices/courseSlice.ts(250,48): error TS7006: Parameter 'c' implicitly has an 'any' type.

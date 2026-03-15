@@ -1,0 +1,17 @@
+﻿src/components/auth/LoginForm.tsx(17,34): error TS2307: Cannot find module '../types/auth.types' or its corresponding type declarations.
+src/components/auth/LoginForm.tsx(64,18): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/components/auth/RegisterForm.tsx(22,30): error TS2307: Cannot find module '../types/auth.types' or its corresponding type declarations.
+src/components/courses/AttachmentList.tsx(20,28): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/CourseCard.tsx(16,24): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/CourseDetails.tsx(21,24): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/CourseDetails.tsx(111,27): error TS2552: Cannot find name 'index'. Did you mean '_index'?
+src/components/courses/CourseForm.tsx(18,60): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/CourseForm.tsx(87,20): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/components/courses/LessonList.tsx(19,24): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/courses/ModuleList.tsx(17,24): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
+src/components/payment/PaymentForm.tsx(63,13): error TS6133: 'paymentData' is declared but its value is never read.
+src/components/quiz/QuizForm.tsx(5,27): error TS6133: 'useEffect' is declared but its value is never read.
+src/components/quiz/QuizForm.tsx(18,3): error TS6133: 'Divider' is declared but its value is never read.
+src/components/quiz/QuizQuestion.tsx(7,3): error TS6133: 'Box' is declared but its value is never read.
+src/store/slices/authSlice.ts(15,8): error TS2307: Cannot find module '../types/auth.types' or its corresponding type declarations.
+src/store/slices/courseSlice.ts(13,8): error TS2307: Cannot find module '../types/course.types' or its corresponding type declarations.
