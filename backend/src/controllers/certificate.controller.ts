@@ -1,6 +1,39 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import * as certificateService from '../services/certificate.service';
+import Enrollment from '../models/Enrollment';
+
+const extractId = (value: unknown): string => {
+  if (!value) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'object') {
+    const withId = value as { _id?: unknown; id?: unknown };
+    if (withId._id) {
+      return String(withId._id);
+    }
+    if (withId.id) {
+      return String(withId.id);
+    }
+  }
+
+  return String(value);
+};
+
+const sanitizeFileName = (value: string): string => {
+  const sanitized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+
+  return sanitized || 'certificate';
+};
 
 /**
  * Certificate Controllers
@@ -26,7 +59,8 @@ export const getCertificate = async (req: AuthRequest, res: Response): Promise<v
     }
 
     // Access control: students can only see their own certificates, admins see all
-    if (req.user?.role !== 'admin' && certificate.studentId.toString() !== req.user?.userId) {
+    const certificateStudentId = extractId(certificate.studentId);
+    if (req.user?.role !== 'admin' && certificateStudentId !== req.user?.userId) {
       res.status(403).json({
         success: false,
         message: 'Access denied',
@@ -79,6 +113,78 @@ export const listCertificates = async (req: AuthRequest, res: Response): Promise
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to list certificates',
+    });
+  }
+};
+
+/**
+ * Generate certificate for a completed enrollment
+ * POST /api/v1/certificates/enrollments/:enrollmentId/generate
+ */
+export const generateCertificateForEnrollment = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { enrollmentId } = req.params;
+
+    const enrollment = await Enrollment.findById(enrollmentId).select(
+      'studentId isCompleted'
+    );
+    if (!enrollment) {
+      res.status(404).json({
+        success: false,
+        message: 'Enrollment not found',
+      });
+      return;
+    }
+
+    if (
+      req.user?.role !== 'admin' &&
+      enrollment.studentId.toString() !== req.user?.userId
+    ) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied',
+      });
+      return;
+    }
+
+    if (!enrollment.isCompleted) {
+      res.status(400).json({
+        success: false,
+        message: 'Enrollment must be completed before generating a certificate',
+      });
+      return;
+    }
+
+    const existingCertificate =
+      await certificateService.getCertificateByEnrollment(enrollmentId as string);
+
+    if (existingCertificate) {
+      res.status(200).json({
+        success: true,
+        data: existingCertificate,
+        message: 'Certificate already exists for this enrollment',
+      });
+      return;
+    }
+
+    const certificate = await certificateService.generateCertificate(
+      enrollmentId as string
+    );
+
+    res.status(201).json({
+      success: true,
+      data: certificate,
+      message: 'Certificate generated successfully',
+    });
+  } catch (error: any) {
+    const statusCode = error.message.includes('not found') ? 404 : 400;
+
+    res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to generate certificate',
     });
   }
 };
@@ -142,7 +248,8 @@ export const regenerateCertificate = async (req: AuthRequest, res: Response): Pr
     }
 
     // Access control: only certificate owner or admin can regenerate
-    if (req.user?.role !== 'admin' && existingCertificate.studentId.toString() !== req.user?.userId) {
+    const certificateStudentId = extractId(existingCertificate.studentId);
+    if (req.user?.role !== 'admin' && certificateStudentId !== req.user?.userId) {
       res.status(403).json({
         success: false,
         message: 'Access denied',
@@ -163,6 +270,58 @@ export const regenerateCertificate = async (req: AuthRequest, res: Response): Pr
     res.status(statusCode).json({
       success: false,
       message: error.message || 'Failed to regenerate certificate',
+    });
+  }
+};
+
+/**
+ * Download certificate PDF
+ * GET /api/v1/certificates/:id/download
+ */
+export const downloadCertificate = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const certificate = await certificateService.getCertificate(id as string);
+    if (!certificate) {
+      res.status(404).json({
+        success: false,
+        message: 'Certificate not found',
+      });
+      return;
+    }
+
+    const certificateStudentId = extractId(certificate.studentId);
+    if (req.user?.role !== 'admin' && certificateStudentId !== req.user?.userId) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied',
+      });
+      return;
+    }
+
+    const pdfBuffer = await certificateService.generateCertificatePdf({
+      studentName: certificate.studentName,
+      courseTitle: certificate.courseTitle,
+      instructorName: certificate.instructorName,
+      completionDate: new Date(certificate.completionDate),
+      verificationCode: certificate.verificationCode,
+    });
+
+    const fileName = `${sanitizeFileName(certificate.courseTitle)}-certificate.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.status(200).send(pdfBuffer);
+  } catch (error: any) {
+    const statusCode = error.message.includes('not found') ? 404 : 400;
+
+    res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to download certificate',
     });
   }
 };

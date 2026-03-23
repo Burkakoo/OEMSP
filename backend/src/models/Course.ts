@@ -74,6 +74,7 @@ export interface ICourse extends Document {
   category: string;
   level: CourseLevel;
   price: number;
+  isFree: boolean;
   thumbnail: string;
   modules: IModule[];
   prerequisites: string[];
@@ -286,6 +287,10 @@ const CourseSchema = new Schema<ICourse>(
       required: [true, 'Course price is required'],
       min: [0, 'Price cannot be negative'],
       max: [99999.99, 'Price cannot exceed 99999.99'],
+    },
+    isFree: {
+      type: Boolean,
+      default: false,
     },
     thumbnail: {
       type: String,

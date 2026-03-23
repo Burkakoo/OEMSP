@@ -18,6 +18,13 @@ const router = Router();
 router.post('/register', authController.register);
 
 /**
+ * POST /api/v1/auth/verify-email
+ * Verify email OTP code
+ * Public endpoint
+ */
+router.post('/verify-email', authController.verifyEmail);
+
+/**
  * POST /api/v1/auth/login
  * Login user
  * Public endpoint
@@ -40,10 +47,17 @@ router.post('/refresh', authController.refreshToken);
 
 /**
  * POST /api/v1/auth/reset-password
- * Request password reset
+ * Request password reset OTP
  * Public endpoint
  */
 router.post('/reset-password', authController.requestPasswordReset);
+
+/**
+ * POST /api/v1/auth/reset-password/confirm
+ * Confirm password reset with OTP
+ * Public endpoint
+ */
+router.post('/reset-password/confirm', authController.confirmPasswordReset);
 
 /**
  * POST /api/v1/auth/change-password

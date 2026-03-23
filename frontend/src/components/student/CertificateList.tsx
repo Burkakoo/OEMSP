@@ -19,7 +19,7 @@ import VerifiedIcon from '@mui/icons-material/Verified';
 
 interface Certificate {
   _id: string;
-  courseName: string;
+  courseTitle: string;
   issuedAt: string;
   verificationCode: string;
 }
@@ -65,7 +65,7 @@ const CertificateList: React.FC<CertificateListProps> = ({ certificates, onDownl
             <VerifiedIcon color="success" />
           </ListItemIcon>
           <ListItemText
-            primary={certificate.courseName}
+            primary={certificate.courseTitle}
             secondary={
               <Box>
                 <Typography variant="caption" component="span" color="text.secondary">

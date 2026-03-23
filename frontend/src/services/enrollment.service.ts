@@ -20,6 +20,12 @@ interface EnrollmentResponse {
   data: Enrollment;
 }
 
+interface GetEnrollmentsParams {
+  courseId?: string;
+  page?: number;
+  limit?: number;
+}
+
 type AnyEnrollment = any;
 
 const normalizeEnrollment = (raw: AnyEnrollment): Enrollment => {
@@ -40,10 +46,21 @@ const normalizeEnrollment = (raw: AnyEnrollment): Enrollment => {
         lessonId: String(p.lessonId),
         completed: Boolean(p.completed),
         completedAt: p.completedAt,
+        timeSpent: Number(p.timeSpent ?? 0),
       }))
     : Array.isArray(raw?.lessonProgress)
-      ? raw.lessonProgress
+      ? raw.lessonProgress.map((p: any) => ({
+          lessonId: String(p.lessonId),
+          completed: Boolean(p.completed),
+          completedAt: p.completedAt,
+          timeSpent: Number(p.timeSpent ?? 0),
+        }))
       : [];
+
+  const isCompleted = Boolean(raw?.isCompleted);
+  const completionPercentage = Number(raw?.completionPercentage ?? 0);
+  const normalizedCompletionPercentage =
+    isCompleted && completionPercentage === 0 ? 100 : completionPercentage;
 
   return {
     _id: String(raw?._id ?? raw?.id ?? ''),
@@ -58,16 +75,23 @@ const normalizeEnrollment = (raw: AnyEnrollment): Enrollment => {
         }
       : raw?.course,
     enrolledAt: raw?.enrolledAt ?? raw?.createdAt ?? new Date().toISOString(),
-    completionPercentage: Number(raw?.completionPercentage ?? 0),
-    isCompleted: Boolean(raw?.isCompleted),
+    completionPercentage: normalizedCompletionPercentage,
+    isCompleted,
     completedAt: raw?.completedAt,
     lessonProgress,
   };
 };
 
 export const enrollmentService = {
-  getEnrollments: async (): Promise<EnrollmentsResponse> => {
-    const response = await apiRequest<any>('/enrollments');
+  getEnrollments: async (params: GetEnrollmentsParams = {}): Promise<EnrollmentsResponse> => {
+    const searchParams = new URLSearchParams();
+    if (params.courseId) searchParams.append('courseId', params.courseId);
+    if (params.page) searchParams.append('page', String(params.page));
+    if (params.limit) searchParams.append('limit', String(params.limit));
+
+    const query = searchParams.toString();
+    const endpoint = query ? `/enrollments?${query}` : '/enrollments';
+    const response = await apiRequest<any>(endpoint);
 
     // Backend returns: { success, data: { enrollments, total, page, pages } }
     const rawData = response?.data;
@@ -97,6 +121,18 @@ export const enrollmentService = {
 
   createEnrollment: async (courseId: string): Promise<EnrollmentResponse> => {
     const response = await apiRequest<any>('/enrollments', {
+      method: 'POST',
+      body: JSON.stringify({ courseId }),
+    });
+
+    return {
+      success: Boolean(response?.success),
+      data: normalizeEnrollment(response?.data),
+    };
+  },
+
+  enrollInFreeCourse: async (courseId: string): Promise<EnrollmentResponse> => {
+    const response = await apiRequest<any>('/enrollments/free', {
       method: 'POST',
       body: JSON.stringify({ courseId }),
     });

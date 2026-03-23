@@ -42,6 +42,18 @@ interface LessonResponse {
   lesson: Lesson;
 }
 
+interface AttachmentUploadResponse {
+  success: boolean;
+  attachment: {
+    _id: string;
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+    fileUrl: string;
+    uploadedAt: string;
+  };
+}
+
 type BackendCourse = any;
 
 const normalizeCourse = (raw: BackendCourse): Course => {
@@ -98,6 +110,14 @@ const sanitizeCoursePayload = (payload: any): any => {
 
   return cleaned;
 };
+
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
 
 export const courseService = {
   getCourses: async (filters: CourseFilters = {}, page = 1, limit = 10): Promise<CoursesResponse> => {
@@ -225,9 +245,9 @@ export const courseService = {
   },
 
   addLesson: async (courseId: string, moduleId: string, data: CreateLessonData): Promise<LessonResponse> => {
-    return apiRequest<LessonResponse>(`/modules/${moduleId}/lessons`, {
+    return apiRequest<LessonResponse>(`/courses/${courseId}/modules/${moduleId}/lessons`, {
       method: 'POST',
-      body: JSON.stringify({ courseId, ...data }),
+      body: JSON.stringify(data),
     });
   },
 
@@ -257,25 +277,28 @@ export const courseService = {
     });
   },
 
-  uploadAttachment: async (lessonId: string, file: File): Promise<CourseResponse> => {
-    const formData = new FormData();
-    formData.append('file', file);
+  uploadAttachment: async (
+    courseId: string,
+    moduleId: string,
+    lessonId: string,
+    file: File
+  ): Promise<AttachmentUploadResponse> => {
+    const fileName = file.name;
+    const extension = fileName.includes('.')
+      ? fileName.split('.').pop()!.toLowerCase()
+      : '';
+    const fileData = await fileToDataUrl(file);
 
-    const token = localStorage.getItem('token');
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1'}/lessons/${lessonId}/attachments`, {
+    return apiRequest<AttachmentUploadResponse>(`/lessons/${lessonId}/attachments`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      body: formData,
+      body: JSON.stringify({
+        courseId,
+        moduleId,
+        fileName,
+        fileType: extension,
+        fileData,
+      }),
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to upload attachment');
-    }
-
-    return data;
   },
 
   deleteAttachment: async (attachmentId: string): Promise<{ success: boolean; message: string }> => {

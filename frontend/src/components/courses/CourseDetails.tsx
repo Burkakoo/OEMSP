@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -34,6 +35,16 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
   showEnrollButton = true,
   isEnrolled = false,
 }) => {
+  const navigate = useNavigate();
+  const isFreeCourse = course.isFree;
+
+  const handleGoToCourse = () => {
+    navigate(`/courses/${course._id}/learn`);
+  };
+
+  const handleEnroll = () => {
+    onEnroll?.();
+  };
   return (
     <Box>
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -47,14 +58,19 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
                 By {course.instructor.firstName} {course.instructor.lastName}
               </Typography>
             )}
+            {isFreeCourse && (
+              <Chip label="FREE" color="success" sx={{ mt: 1 }} />
+            )}
           </Box>
           {showEnrollButton && !isEnrolled && (
-            <Button variant="contained" size="large" onClick={onEnroll}>
-              Enroll Now - {course.currency} {course.price.toFixed(2)}
+            <Button variant="contained" size="large" onClick={handleEnroll}>
+              Enroll Now - {isFreeCourse ? 'FREE' : `${course.currency} ${course.price.toFixed(2)}`}
             </Button>
           )}
           {isEnrolled && (
-            <Chip label="Enrolled" color="success" />
+            <Button variant="contained" size="large" color="primary" onClick={handleGoToCourse}>
+              Go to Course
+            </Button>
           )}
         </Box>
 

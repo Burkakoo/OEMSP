@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Container, Paper, Typography, Alert, CircularProgress, Box } from '@mui/material';
 import { quizService } from '../services/quiz.service';
 import { courseService } from '../services/course.service';
@@ -14,6 +14,7 @@ import { Module } from '../types/course.types';
 const CreateQuizPage: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [error, setError] = React.useState<string | null>(null);
   const [modules, setModules] = React.useState<Module[]>([]);
   const [isLoadingCourse, setIsLoadingCourse] = React.useState(false);
@@ -35,6 +36,8 @@ const CreateQuizPage: React.FC = () => {
       });
   }, [courseId]);
 
+  const defaultModuleId = searchParams.get('moduleId') || undefined;
+
   const handleSubmit = async (quizData: Partial<Quiz>) => {
     if (!courseId) {
       setError('Course ID is required');
@@ -43,7 +46,7 @@ const CreateQuizPage: React.FC = () => {
 
     try {
       await quizService.createQuiz(courseId, quizData);
-      navigate(`/courses/${courseId}`);
+      navigate(`/instructor/courses/${courseId}/edit`);
     } catch (err) {
       setError((err as Error).message || 'Failed to create quiz');
     }
@@ -51,7 +54,7 @@ const CreateQuizPage: React.FC = () => {
 
   const handleCancel = () => {
     if (courseId) {
-      navigate(`/courses/${courseId}`);
+      navigate(`/instructor/courses/${courseId}/edit`);
     } else {
       navigate('/dashboard');
     }
@@ -75,7 +78,12 @@ const CreateQuizPage: React.FC = () => {
             <CircularProgress />
           </Box>
         ) : (
-          <QuizForm modules={modules} onSubmit={handleSubmit} onCancel={handleCancel} />
+          <QuizForm
+            modules={modules}
+            defaultModuleId={defaultModuleId}
+            onSubmit={handleSubmit}
+            onCancel={handleCancel}
+          />
         )}
       </Paper>
     </Container>

@@ -56,4 +56,25 @@ router.put('/lessons/:id', authenticate, moduleController.updateLesson);
  */
 router.delete('/lessons/:id', authenticate, moduleController.deleteLesson);
 
+/**
+ * POST /api/v1/lessons/:id/attachments
+ * Upload an attachment to a lesson
+ * Requires authentication (instructor/admin)
+ */
+router.post('/lessons/:id/attachments', authenticate, moduleController.uploadAttachment);
+
+/**
+ * GET /api/v1/attachments/:id/download
+ * Download an attachment
+ * Requires authentication
+ */
+router.get('/attachments/:id/download', authenticate, moduleController.downloadAttachment);
+
+/**
+ * DELETE /api/v1/attachments/:id
+ * Delete an attachment
+ * Requires authentication (instructor/admin)
+ */
+router.delete('/attachments/:id', authenticate, moduleController.deleteAttachment);
+
 export default router;

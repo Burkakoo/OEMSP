@@ -55,7 +55,7 @@ const EditQuizPage: React.FC = () => {
 
       const cId = (currentQuiz?.courseId as any)?._id || currentQuiz?.courseId;
       if (typeof cId === 'string' && cId) {
-        navigate(`/courses/${cId}`);
+        navigate(`/instructor/courses/${cId}/edit`);
       } else {
         navigate('/dashboard');
       }
@@ -67,7 +67,7 @@ const EditQuizPage: React.FC = () => {
   const handleCancel = () => {
     const cId = (currentQuiz?.courseId as any)?._id || currentQuiz?.courseId;
     if (typeof cId === 'string' && cId) {
-      navigate(`/courses/${cId}`);
+      navigate(`/instructor/courses/${cId}/edit`);
     } else {
       navigate('/dashboard');
     }

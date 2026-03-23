@@ -17,6 +17,7 @@ import {
   InputLabel,
   Grid,
   ListItemText,
+  FormControlLabel,
 } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { Quiz, QuizQuestion } from '../../types/quiz.types';
@@ -25,17 +26,25 @@ import { Module } from '../../types/course.types';
 interface QuizFormProps {
   initialData?: Quiz;
   modules?: Module[];
+  defaultModuleId?: string;
   onSubmit: (quizData: Partial<Quiz>) => void;
   onCancel: () => void;
 }
 
-const QuizForm: React.FC<QuizFormProps> = ({ initialData, modules, onSubmit, onCancel }) => {
+const QuizForm: React.FC<QuizFormProps> = ({
+  initialData,
+  modules,
+  defaultModuleId,
+  onSubmit,
+  onCancel,
+}) => {
   const [title, setTitle] = useState(initialData?.title || '');
   const [description, setDescription] = useState(initialData?.description || '');
   const [moduleId, setModuleId] = useState(initialData?.moduleId || '');
   const [passingScore, setPassingScore] = useState(initialData?.passingScore || 70);
   const [duration, setDuration] = useState(initialData?.duration || 30);
   const [maxAttempts, setMaxAttempts] = useState(initialData?.maxAttempts || 1);
+  const [isPublished, setIsPublished] = useState(initialData?.isPublished ?? true);
   const [questions, setQuestions] = useState<Partial<QuizQuestion>[]>(
     initialData?.questions || [
       {
@@ -52,9 +61,13 @@ const QuizForm: React.FC<QuizFormProps> = ({ initialData, modules, onSubmit, onC
   useEffect(() => {
     // Default module selection for create flow once modules are loaded
     if (!initialData && modules && modules.length > 0 && !moduleId) {
-      setModuleId(modules[0]._id);
+      const preferred =
+        defaultModuleId && modules.some((m) => m._id === defaultModuleId)
+          ? defaultModuleId
+          : modules[0]._id;
+      setModuleId(preferred);
     }
-  }, [initialData, modules, moduleId]);
+  }, [initialData, modules, moduleId, defaultModuleId]);
 
   const handleAddQuestion = () => {
     setQuestions([
@@ -167,6 +180,7 @@ const QuizForm: React.FC<QuizFormProps> = ({ initialData, modules, onSubmit, onC
       duration,
       passingScore,
       maxAttempts,
+      isPublished,
       questions: normalizedQuestions,
     };
     
@@ -178,6 +192,9 @@ const QuizForm: React.FC<QuizFormProps> = ({ initialData, modules, onSubmit, onC
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           Quiz Details
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Add your questions below, then set the correct answer for each question type.
         </Typography>
         
         <TextField
@@ -255,6 +272,17 @@ const QuizForm: React.FC<QuizFormProps> = ({ initialData, modules, onSubmit, onC
             />
           </Grid>
         </Grid>
+
+        <FormControlLabel
+          sx={{ mt: 1 }}
+          control={
+            <Checkbox
+              checked={isPublished}
+              onChange={(e) => setIsPublished(e.target.checked)}
+            />
+          }
+          label="Publish quiz now (students can see and take it)"
+        />
       </Paper>
 
       <Typography variant="h6" gutterBottom>

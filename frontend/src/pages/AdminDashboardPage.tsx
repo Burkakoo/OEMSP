@@ -129,6 +129,11 @@ const AdminDashboardPage: React.FC = () => {
     }
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    await userService.deleteUser(userId);
+    setUsers((prev) => prev.filter((u) => u._id !== userId));
+  };
+
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
@@ -222,7 +227,7 @@ const AdminDashboardPage: React.FC = () => {
             <CircularProgress />
           </Box>
         ) : (
-          <UserManagement users={users} />
+          <UserManagement users={users} onDeleteUser={handleDeleteUser} />
         )}
       </TabPanel>
 

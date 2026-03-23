@@ -114,6 +114,7 @@ export const createQuiz = async (
     duration: number;
     passingScore: number;
     maxAttempts: number;
+    isPublished?: boolean;
   },
   instructorId: string
 ): Promise<IQuiz> => {
@@ -161,7 +162,7 @@ export const createQuiz = async (
     duration: quizData.duration,
     passingScore: quizData.passingScore,
     maxAttempts: quizData.maxAttempts,
-    isPublished: false,
+    isPublished: quizData.isPublished ?? false,
   });
 
   // Invalidate caches
@@ -169,6 +170,25 @@ export const createQuiz = async (
   await deleteCache(`quizzes:course:${quizData.courseId}`);
 
   return quiz;
+};
+
+/**
+ * List quizzes by course
+ */
+export const listCourseQuizzes = async (
+  courseId: string,
+  options: { includeUnpublished?: boolean } = {}
+): Promise<IQuiz[]> => {
+  if (!mongoose.Types.ObjectId.isValid(courseId)) {
+    throw new Error('Invalid course ID');
+  }
+
+  const query: any = { courseId };
+  if (!options.includeUnpublished) {
+    query.isPublished = true;
+  }
+
+  return Quiz.find(query).sort({ createdAt: -1 }).exec();
 };
 
 /**

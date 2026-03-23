@@ -16,8 +16,9 @@ import UnauthorizedPage from '@pages/UnauthorizedPage';
 import NotFoundPage from '@pages/NotFoundPage';
 import DashboardPage from '@pages/DashboardPage';
 import StudentDashboardPage from '@pages/StudentDashboardPage';
-import InstructorDashboardPage from '@pages/InstructorDashboardPage';
-import AdminDashboardPage from '@pages/AdminDashboardPage';
+import InstructorDashboardPage from './pages/InstructorDashboardPage';
+import InstructorCoursesPage from './pages/InstructorCoursesPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
 import CreateCoursePage from '@pages/CreateCoursePage';
 import EditCoursePage from '@pages/EditCoursePage';
 import CourseCatalogPage from '@pages/CourseCatalogPage';
@@ -111,7 +112,14 @@ const App: React.FC = () => {
           }
         />
 
-        <Route path="/instructor/courses" element={<Navigate to="/instructor/dashboard" replace />} />
+        <Route
+          path="/instructor/courses"
+          element={
+            <ProtectedRoute requiredRole="instructor" requireApproval>
+              <InstructorCoursesPage />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/instructor/courses/create"

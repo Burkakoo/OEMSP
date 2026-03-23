@@ -7,6 +7,7 @@ import { Router } from 'express';
 import * as courseController from '../controllers/course.controller';
 import * as enrollmentController from '../controllers/enrollment.controller';
 import * as quizController from '../controllers/quiz.controller';
+import * as moduleController from '../controllers/module.controller';
 import { authenticate, optionalAuth } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -21,19 +22,49 @@ const router = Router();
 router.get('/', optionalAuth, courseController.listCourses);
 
 /**
+ * POST /api/v1/courses
+ * Create a new course
+ * Requires authentication (instructor only)
+ */
+router.post('/', authenticate, courseController.createCourse);
+
+/**
+ * POST /api/v1/courses/:courseId/quizzes
+ * Create a new quiz for a course
+ * Requires authentication (instructor only - course owner)
+ */
+router.post('/:courseId/quizzes', authenticate, quizController.createQuiz);
+
+/**
+ * GET /api/v1/courses/:courseId/quizzes
+ * List quizzes for a course
+ * Requires authentication
+ * - Students: published quizzes only, must be enrolled
+ * - Instructors/Admins: can include unpublished with ?includeUnpublished=true
+ */
+router.get('/:courseId/quizzes', authenticate, quizController.listCourseQuizzes);
+
+/**
+ * POST /api/v1/courses/:courseId/modules
+ * Add a module to a course
+ * Requires authentication (course owner only)
+ */
+router.post('/:courseId/modules', authenticate, moduleController.addModule);
+
+/**
+ * POST /api/v1/courses/:courseId/modules/:moduleId/lessons
+ * Add a lesson to a module
+ * Requires authentication (course owner only)
+ */
+router.post('/:courseId/modules/:moduleId/lessons', authenticate, moduleController.addLesson);
+
+/**
  * GET /api/v1/courses/:id
  * Get course by ID
  * Public endpoint for published courses (authentication optional)
  * - Unpublished courses require authentication and ownership
  */
 router.get('/:id', optionalAuth, courseController.getCourse);
-
-/**
- * POST /api/v1/courses
- * Create a new course
- * Requires authentication (instructor only)
- */
-router.post('/', authenticate, courseController.createCourse);
 
 /**
  * PUT /api/v1/courses/:id
@@ -69,12 +100,5 @@ router.post('/:id/unpublish', authenticate, courseController.unpublishCourse);
  * Requires authentication (instructor or admin only)
  */
 router.get('/:id/enrollments', authenticate, enrollmentController.getCourseEnrollments);
-
-/**
- * POST /api/v1/courses/:courseId/quizzes
- * Create a new quiz for a course
- * Requires authentication (instructor only - course owner)
- */
-router.post('/:courseId/quizzes', authenticate, quizController.createQuiz);
 
 export default router;

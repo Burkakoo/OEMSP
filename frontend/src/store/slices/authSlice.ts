@@ -9,6 +9,7 @@ import {
   AuthState,
   LoginCredentials,
   RegisterData,
+  VerifyEmailData,
   User,
   PasswordResetRequest,
   PasswordResetData,
@@ -50,8 +51,19 @@ export const register = createAsyncThunk(
   async (data: RegisterData, { rejectWithValue }) => {
     try {
       const response = await authService.register(data);
-      setAuthToken(response.data.token);
-      return response.data;
+      return response;
+    } catch (error) {
+      return rejectWithValue((error as Error).message);
+    }
+  }
+);
+
+export const verifyEmail = createAsyncThunk(
+  'auth/verifyEmail',
+  async (data: VerifyEmailData, { rejectWithValue }) => {
+    try {
+      const response = await authService.verifyEmail(data);
+      return response.message;
     } catch (error) {
       return rejectWithValue((error as Error).message);
     }
@@ -146,14 +158,26 @@ const authSlice = createSlice({
         state.isLoading = true;
         state.error = null;
       })
-      .addCase(register.fulfilled, (state, action) => {
+      .addCase(register.fulfilled, (state) => {
         state.isLoading = false;
-        state.user = normalizeUser(action.payload.user);
-        state.token = action.payload.token;
-        state.isAuthenticated = true;
         state.error = null;
       })
       .addCase(register.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
+
+    // Verify email
+    builder
+      .addCase(verifyEmail.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(verifyEmail.fulfilled, (state) => {
+        state.isLoading = false;
+        state.error = null;
+      })
+      .addCase(verifyEmail.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       });

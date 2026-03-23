@@ -31,6 +31,13 @@ router.get('/:id', authenticate, enrollmentController.getEnrollment);
 router.post('/', authenticate, enrollmentController.createEnrollment);
 
 /**
+ * @route   POST /api/v1/enrollments/free
+ * @desc    Enroll in free course without payment
+ * @access  Private (Student)
+ */
+router.post('/free', authenticate, enrollmentController.enrollInFreeCourse);
+
+/**
  * @route   PUT /api/v1/enrollments/:id/progress
  * @desc    Update lesson progress
  * @access  Private (Student - own only)

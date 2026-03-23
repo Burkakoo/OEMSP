@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import { Course } from '@/types/course.types';
 import { getCourseIcon, getCourseBackgroundColor } from '@/utils/courseIcons';
+import { enrollmentService } from '@/services/enrollment.service';
 
 interface CourseCardProps {
   course: Course;
@@ -33,8 +34,20 @@ const CourseCard: React.FC<CourseCardProps> = ({
     onViewDetails?.(course._id);
   };
 
-  const handleEnroll = () => {
-    onEnroll?.(course._id);
+  const handleEnroll = async () => {
+    const isFreeCourse = course.isFree;
+    
+    if (isFreeCourse) {
+      try {
+        await enrollmentService.enrollInFreeCourse(course._id);
+        alert('Successfully enrolled in free course!');
+        onEnroll?.(course._id);
+      } catch (error: any) {
+        alert(error.message || 'Failed to enroll in free course');
+      }
+    } else {
+      onEnroll?.(course._id);
+    }
   };
 
   return (
@@ -77,6 +90,9 @@ const CourseCard: React.FC<CourseCardProps> = ({
         <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap' }}>
           <Chip label={course.category} size="small" color="primary" variant="outlined" />
           <Chip label={course.level} size="small" />
+          {course.isFree && (
+            <Chip label="FREE" size="small" color="success" />
+          )}
         </Box>
         {course.instructor && (
           <Typography variant="caption" color="text.secondary">
@@ -85,7 +101,7 @@ const CourseCard: React.FC<CourseCardProps> = ({
         )}
         <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6" color="primary">
-            {course.currency} {course.price.toFixed(2)}
+            {course.isFree ? 'FREE' : `${course.currency} ${course.price.toFixed(2)}`}
           </Typography>
           {course.rating && (
             <Typography variant="body2" color="text.secondary">

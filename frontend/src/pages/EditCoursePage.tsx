@@ -23,6 +23,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Chip,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -65,6 +66,10 @@ const EditCoursePage: React.FC = () => {
     order: 1,
   });
   const [lessonErrors, setLessonErrors] = React.useState<Record<string, string>>({});
+  const [uploadLessonId, setUploadLessonId] = React.useState<string>('');
+  const [uploadFile, setUploadFile] = React.useState<File | null>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = React.useState(false);
+  const [uploadInputKey, setUploadInputKey] = React.useState(0);
 
   useEffect(() => {
     if (id) {
@@ -102,6 +107,21 @@ const EditCoursePage: React.FC = () => {
       setSelectedModuleId(currentCourse.modules[0]._id);
     }
   }, [currentCourse, selectedModuleId]);
+
+  useEffect(() => {
+    if (!currentCourse || !selectedModuleId) {
+      setUploadLessonId('');
+      return;
+    }
+    const module = currentCourse.modules.find((m) => m._id === selectedModuleId);
+    if (!module || module.lessons.length === 0) {
+      setUploadLessonId('');
+      return;
+    }
+    if (!uploadLessonId || !module.lessons.some((l) => l._id === uploadLessonId)) {
+      setUploadLessonId(module.lessons[0]._id);
+    }
+  }, [currentCourse, selectedModuleId, uploadLessonId]);
 
   const openAddModule = () => {
     if (!currentCourse) return;
@@ -261,6 +281,173 @@ const EditCoursePage: React.FC = () => {
     }
   };
 
+  // ── Delete / Edit Module ──────────────────────────────────────────────────
+  const [deletingModuleId, setDeletingModuleId] = React.useState<string | null>(null);
+  const [editModuleOpen, setEditModuleOpen] = React.useState(false);
+  const [editingModule, setEditingModule] = React.useState<{ id: string; title: string; description: string; order: number } | null>(null);
+  const [editModuleErrors, setEditModuleErrors] = React.useState<Record<string, string>>({});
+  const [isSavingModule, setIsSavingModule] = React.useState(false);
+
+  const handleDeleteModule = async (moduleId: string) => {
+    if (!id || !currentCourse) return;
+    if (!window.confirm('Delete this module and all its lessons?')) return;
+    setDeletingModuleId(moduleId);
+    try {
+      await courseService.deleteModule(currentCourse._id, moduleId);
+      if (selectedModuleId === moduleId) setSelectedModuleId(null);
+      await dispatch(fetchCourse(id)).unwrap();
+    } catch (err) {
+      setPageError(typeof err === 'string' ? err : (err as any)?.message || 'Failed to delete module');
+    } finally {
+      setDeletingModuleId(null);
+    }
+  };
+
+  const handleEditModule = (moduleId: string) => {
+    if (!currentCourse) return;
+    const mod = currentCourse.modules.find((m) => m._id === moduleId);
+    if (!mod) return;
+    setEditingModule({ id: moduleId, title: mod.title, description: mod.description, order: mod.order });
+    setEditModuleErrors({});
+    setEditModuleOpen(true);
+  };
+
+  const submitEditModule = async () => {
+    if (!id || !currentCourse || !editingModule) return;
+    const errs: Record<string, string> = {};
+    if (!editingModule.title.trim()) errs.title = 'Title is required';
+    if (!editingModule.description.trim()) errs.description = 'Description is required';
+    setEditModuleErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    setIsSavingModule(true);
+    try {
+      await courseService.updateModule(currentCourse._id, editingModule.id, {
+        title: editingModule.title.trim(),
+        description: editingModule.description.trim(),
+        order: editingModule.order,
+      });
+      setEditModuleOpen(false);
+      await dispatch(fetchCourse(id)).unwrap();
+    } catch (err) {
+      setPageError(typeof err === 'string' ? err : (err as any)?.message || 'Failed to update module');
+    } finally {
+      setIsSavingModule(false);
+    }
+  };
+
+  // ── Delete / Edit Lesson ──────────────────────────────────────────────────
+  const [deletingLessonId, setDeletingLessonId] = React.useState<string | null>(null);
+  const [editLessonOpen, setEditLessonOpen] = React.useState(false);
+  const [editingLesson, setEditingLesson] = React.useState<any | null>(null);
+  const [editLessonErrors, setEditLessonErrors] = React.useState<Record<string, string>>({});
+  const [isSavingLesson, setIsSavingLesson] = React.useState(false);
+
+  const handleDeleteLesson = async (lessonId: string) => {
+    if (!id || !currentCourse || !selectedModuleId) return;
+    if (!window.confirm('Delete this lesson?')) return;
+    setDeletingLessonId(lessonId);
+    try {
+      await courseService.deleteLesson(currentCourse._id, selectedModuleId, lessonId);
+      await dispatch(fetchCourse(id)).unwrap();
+    } catch (err) {
+      setPageError(typeof err === 'string' ? err : (err as any)?.message || 'Failed to delete lesson');
+    } finally {
+      setDeletingLessonId(null);
+    }
+  };
+
+  const handleEditLesson = (lessonId: string) => {
+    if (!currentCourse || !selectedModuleId) return;
+    const mod = currentCourse.modules.find((m) => m._id === selectedModuleId);
+    const lesson = mod?.lessons.find((l) => l._id === lessonId);
+    if (!lesson) return;
+    setEditingLesson({ ...lesson });
+    setEditLessonErrors({});
+    setEditLessonOpen(true);
+  };
+
+  const submitEditLesson = async () => {
+    if (!id || !currentCourse || !selectedModuleId || !editingLesson) return;
+    const errs: Record<string, string> = {};
+    if (!editingLesson.title?.trim()) errs.title = 'Title is required';
+    if (!editingLesson.description?.trim()) errs.description = 'Description is required';
+    if (!editingLesson.content?.trim()) errs.content = 'Content is required';
+    setEditLessonErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    setIsSavingLesson(true);
+    try {
+      await courseService.updateLesson(currentCourse._id, selectedModuleId, editingLesson._id, {
+        title: editingLesson.title.trim(),
+        description: editingLesson.description.trim(),
+        type: editingLesson.type,
+        content: editingLesson.content.trim(),
+        videoUrl: editingLesson.videoUrl?.trim() || undefined,
+        duration: Number(editingLesson.duration),
+        order: Number(editingLesson.order),
+      });
+      setEditLessonOpen(false);
+      await dispatch(fetchCourse(id)).unwrap();
+    } catch (err) {
+      setPageError(typeof err === 'string' ? err : (err as any)?.message || 'Failed to update lesson');
+    } finally {
+      setIsSavingLesson(false);
+    }
+  };
+
+  // suppress unused-var warnings for loading states used implicitly
+  void deletingModuleId; void deletingLessonId;
+
+  const handleUploadFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] ?? null;
+    if (!nextFile) {
+      setUploadFile(null);
+      return;
+    }
+
+    const extension = nextFile.name.includes('.')
+      ? nextFile.name.split('.').pop()!.toLowerCase()
+      : '';
+    const allowed = ['pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx', 'txt'];
+
+    if (!allowed.includes(extension)) {
+      setPageError('Unsupported file type. Use pdf, ppt, pptx, doc, docx, xls, xlsx, or txt.');
+      setUploadFile(null);
+      return;
+    }
+
+    setPageError(null);
+    setUploadFile(nextFile);
+  };
+
+  const handleUploadAttachment = async () => {
+    if (!id || !currentCourse || !selectedModuleId || !uploadLessonId || !uploadFile) {
+      setPageError('Choose a lesson and file before uploading.');
+      return;
+    }
+
+    setPageError(null);
+    setIsUploadingAttachment(true);
+    try {
+      await courseService.uploadAttachment(
+        currentCourse._id,
+        selectedModuleId,
+        uploadLessonId,
+        uploadFile
+      );
+      await dispatch(fetchCourse(id)).unwrap();
+      setUploadFile(null);
+      setUploadInputKey((k) => k + 1);
+    } catch (err) {
+      const message =
+        typeof err === 'string' ? err : (err as any)?.message || 'Failed to upload attachment';
+      setPageError(message);
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
   if (isLoading && !currentCourse) {
     return (
       <Container maxWidth="lg">
@@ -349,6 +536,9 @@ const EditCoursePage: React.FC = () => {
                 <ModuleList
                   modules={currentCourse.modules}
                   onSelectModule={setSelectedModuleId}
+                  showActions
+                  onDelete={handleDeleteModule}
+                  onEdit={handleEditModule}
                 />
                 <Button variant="outlined" sx={{ mt: 2 }} onClick={openAddModule} disabled={isLoading}>
                   Add Module
@@ -360,7 +550,12 @@ const EditCoursePage: React.FC = () => {
                   Lessons
                 </Typography>
                 {selectedModule ? (
-                  <LessonList lessons={selectedModule.lessons} />
+                  <LessonList
+                    lessons={selectedModule.lessons}
+                    showActions
+                    onDelete={handleDeleteLesson}
+                    onEdit={handleEditLesson}
+                  />
                 ) : (
                   <Paper sx={{ p: 3, textAlign: 'center' }}>
                     <Typography color="text.secondary">Select a module to view lessons.</Typography>
@@ -374,6 +569,74 @@ const EditCoursePage: React.FC = () => {
                 >
                   Add Lesson
                 </Button>
+                <Button
+                  variant="contained"
+                  sx={{ mt: 2, ml: 2 }}
+                  onClick={() =>
+                    navigate(
+                      `/courses/${currentCourse._id}/quiz/create?moduleId=${selectedModuleId ?? ''}`
+                    )
+                  }
+                  disabled={!selectedModuleId}
+                >
+                  Create Quiz
+                </Button>
+
+                {selectedModule && selectedModule.lessons.length > 0 && (
+                  <Paper sx={{ p: 2, mt: 2, border: 1, borderColor: 'divider' }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Upload Lesson Attachment
+                    </Typography>
+                    <FormControl fullWidth margin="normal">
+                      <InputLabel id="upload-lesson-select-label">Lesson</InputLabel>
+                      <Select
+                        labelId="upload-lesson-select-label"
+                        value={uploadLessonId}
+                        label="Lesson"
+                        onChange={(e) => setUploadLessonId(String(e.target.value))}
+                      >
+                        {selectedModule.lessons.map((lesson) => (
+                          <MenuItem key={lesson._id} value={lesson._id}>
+                            {lesson.title}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+                      <Button component="label" variant="outlined">
+                        Choose File
+                        <input
+                          key={uploadInputKey}
+                          hidden
+                          type="file"
+                          accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.txt"
+                          onChange={handleUploadFileChange}
+                        />
+                      </Button>
+                      {uploadFile ? (
+                        <Chip label={uploadFile.name} size="small" />
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          No file selected
+                        </Typography>
+                      )}
+                    </Box>
+
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                      Allowed: PDF, PPT, PPTX, DOC, DOCX, XLS, XLSX, TXT
+                    </Typography>
+
+                    <Button
+                      variant="contained"
+                      sx={{ mt: 2 }}
+                      onClick={handleUploadAttachment}
+                      disabled={isUploadingAttachment || !uploadLessonId || !uploadFile}
+                    >
+                      {isUploadingAttachment ? 'Uploading...' : 'Upload Attachment'}
+                    </Button>
+                  </Paper>
+                )}
               </Box>
             </Box>
           </Paper>
@@ -557,6 +820,82 @@ const EditCoursePage: React.FC = () => {
             </Button>
             <Button variant="contained" onClick={submitAddLesson} disabled={isAddingLesson}>
               {isAddingLesson ? 'Adding...' : 'Add Lesson'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+        {/* Edit Module Dialog */}
+        <Dialog open={editModuleOpen} onClose={() => isSavingModule ? null : setEditModuleOpen(false)} fullWidth maxWidth="sm">
+          <DialogTitle>Edit Module</DialogTitle>
+          <DialogContent sx={{ pt: 1 }}>
+            <TextField margin="normal" fullWidth label="Module Title"
+              value={editingModule?.title ?? ''}
+              onChange={(e) => setEditingModule((p: any) => ({ ...p, title: e.target.value }))}
+              error={!!editModuleErrors.title} helperText={editModuleErrors.title}
+              disabled={isSavingModule} />
+            <TextField margin="normal" fullWidth multiline minRows={3} label="Module Description"
+              value={editingModule?.description ?? ''}
+              onChange={(e) => setEditingModule((p: any) => ({ ...p, description: e.target.value }))}
+              error={!!editModuleErrors.description} helperText={editModuleErrors.description}
+              disabled={isSavingModule} />
+            <TextField margin="normal" fullWidth type="number" label="Order"
+              value={editingModule?.order ?? 1}
+              onChange={(e) => setEditingModule((p: any) => ({ ...p, order: Number(e.target.value) }))}
+              disabled={isSavingModule} />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditModuleOpen(false)} disabled={isSavingModule}>Cancel</Button>
+            <Button variant="contained" onClick={submitEditModule} disabled={isSavingModule}>
+              {isSavingModule ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Edit Lesson Dialog */}
+        <Dialog open={editLessonOpen} onClose={() => isSavingLesson ? null : setEditLessonOpen(false)} fullWidth maxWidth="sm">
+          <DialogTitle>Edit Lesson</DialogTitle>
+          <DialogContent sx={{ pt: 1 }}>
+            <TextField margin="normal" fullWidth label="Lesson Title"
+              value={editingLesson?.title ?? ''}
+              onChange={(e) => setEditingLesson((p: any) => ({ ...p, title: e.target.value }))}
+              error={!!editLessonErrors.title} helperText={editLessonErrors.title}
+              disabled={isSavingLesson} />
+            <TextField margin="normal" fullWidth multiline minRows={2} label="Description"
+              value={editingLesson?.description ?? ''}
+              onChange={(e) => setEditingLesson((p: any) => ({ ...p, description: e.target.value }))}
+              error={!!editLessonErrors.description} helperText={editLessonErrors.description}
+              disabled={isSavingLesson} />
+            <FormControl fullWidth margin="normal" disabled={isSavingLesson}>
+              <InputLabel>Type</InputLabel>
+              <Select label="Type" value={editingLesson?.type ?? 'video'}
+                onChange={(e) => setEditingLesson((p: any) => ({ ...p, type: e.target.value }))}>
+                <MenuItem value="video">Video</MenuItem>
+                <MenuItem value="text">Text</MenuItem>
+                <MenuItem value="quiz">Quiz</MenuItem>
+                <MenuItem value="assignment">Assignment</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField margin="normal" fullWidth multiline minRows={4} label="Content"
+              value={editingLesson?.content ?? ''}
+              onChange={(e) => setEditingLesson((p: any) => ({ ...p, content: e.target.value }))}
+              error={!!editLessonErrors.content} helperText={editLessonErrors.content}
+              disabled={isSavingLesson} />
+            <TextField margin="normal" fullWidth label="Video URL (optional)"
+              value={editingLesson?.videoUrl ?? ''}
+              onChange={(e) => setEditingLesson((p: any) => ({ ...p, videoUrl: e.target.value }))}
+              disabled={isSavingLesson} />
+            <TextField margin="normal" fullWidth type="number" label="Duration (minutes)"
+              value={editingLesson?.duration ?? 10}
+              onChange={(e) => setEditingLesson((p: any) => ({ ...p, duration: Number(e.target.value) }))}
+              disabled={isSavingLesson} />
+            <TextField margin="normal" fullWidth type="number" label="Order"
+              value={editingLesson?.order ?? 1}
+              onChange={(e) => setEditingLesson((p: any) => ({ ...p, order: Number(e.target.value) }))}
+              disabled={isSavingLesson} />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditLessonOpen(false)} disabled={isSavingLesson}>Cancel</Button>
+            <Button variant="contained" onClick={submitEditLesson} disabled={isSavingLesson}>
+              {isSavingLesson ? 'Saving...' : 'Save'}
             </Button>
           </DialogActions>
         </Dialog>

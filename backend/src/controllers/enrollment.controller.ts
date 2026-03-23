@@ -2,6 +2,16 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import * as enrollmentService from '../services/enrollment.service';
 
+const extractId = (value: any): string => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    if (value._id) return value._id.toString();
+    if (value.id) return String(value.id);
+  }
+  return value.toString ? value.toString() : '';
+};
+
 /**
  * Enrollment Controllers
  * Handle HTTP requests for enrollment operations
@@ -26,6 +36,9 @@ export const listEnrollments = async (req: AuthRequest, res: Response): Promise<
     if (req.user?.role === 'student') {
       // Students can only see their own enrollments
       filters.studentId = req.user.userId;
+      if (courseId) {
+        filters.courseId = courseId as string;
+      }
     } else if (req.user?.role === 'instructor') {
       // Instructors can filter by their courses
       if (courseId) {
@@ -84,7 +97,8 @@ export const getEnrollment = async (req: AuthRequest, res: Response): Promise<vo
     // Instructors can see enrollments for their courses
     // Admins can see all enrollments
     if (req.user?.role === 'student') {
-      if (enrollment.studentId.toString() !== req.user.userId) {
+      const enrollmentStudentId = extractId(enrollment.studentId);
+      if (enrollmentStudentId !== req.user.userId) {
         res.status(403).json({
           success: false,
           message: 'Access denied',
@@ -158,6 +172,51 @@ export const createEnrollment = async (req: AuthRequest, res: Response): Promise
 };
 
 /**
+ * Enroll in free course
+ * POST /api/v1/enrollments/free
+ */
+export const enrollInFreeCourse = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { courseId } = req.body;
+
+    // Validation
+    if (!courseId) {
+      res.status(400).json({
+        success: false,
+        message: 'Course ID is required',
+      });
+      return;
+    }
+
+    // Students can only enroll themselves
+    const studentId = req.user?.userId;
+    if (!studentId) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    const enrollment = await enrollmentService.enrollInFreeCourse(studentId, courseId);
+
+    res.status(201).json({
+      success: true,
+      data: enrollment,
+      message: 'Successfully enrolled in free course',
+    });
+  } catch (error: any) {
+    const statusCode = error.message.includes('not found') ? 404 : 
+                       error.message.includes('already enrolled') ? 409 : 400;
+    
+    res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to enroll in free course',
+    });
+  }
+};
+
+/**
  * Update progress
  * PUT /api/v1/enrollments/:id/progress
  */
@@ -202,7 +261,8 @@ export const updateProgress = async (req: AuthRequest, res: Response): Promise<v
     }
 
     // Access control: only the enrolled student can update progress
-    if (enrollment.studentId.toString() !== req.user?.userId) {
+    const enrollmentStudentId = extractId(enrollment.studentId);
+    if (enrollmentStudentId !== req.user?.userId) {
       res.status(403).json({
         success: false,
         message: 'Access denied',

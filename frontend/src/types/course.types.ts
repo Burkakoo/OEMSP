@@ -48,6 +48,7 @@ export interface Course {
   level: 'beginner' | 'intermediate' | 'advanced';
   price: number;
   currency: string;
+  isFree?: boolean;
   thumbnail?: string;
   isPublished: boolean;
   modules: Module[];
@@ -86,6 +87,7 @@ export interface CreateCourseData {
   category: string;
   level: 'beginner' | 'intermediate' | 'advanced';
   price: number;
+  isFree?: boolean;
   currency?: string;
   thumbnail?: string;
 }

@@ -1,15 +1,16 @@
 /**
  * Email Service
- * Handles email sending functionality
- * 
- * NOTE: This is a placeholder implementation for email service integration.
- * In production, you would need to:
- * 1. Choose an email service provider (AWS SES, SendGrid, Mailgun, etc.)
- * 2. Install the appropriate SDK (e.g., @sendgrid/mail, @aws-sdk/client-ses)
- * 3. Configure API keys and credentials in environment variables
- * 4. Implement actual email sending with proper templates
- * 5. Set up email queue for async sending (optional but recommended)
+ * Sends transactional emails using Gmail SMTP via Nodemailer.
+ *
+ * Required env vars:
+ * - EMAIL_USER: Gmail address
+ * - EMAIL_PASS: Gmail App Password (16 chars, no spaces)
+ *
+ * Optional env vars:
+ * - EMAIL_FROM: Defaults to EMAIL_USER when omitted
  */
+
+import nodemailer, { type Transporter } from 'nodemailer';
 
 export interface EmailOptions {
   to: string | string[];
@@ -24,6 +25,31 @@ export interface EmailTemplate {
   subject: string;
   html: string;
 }
+
+let transporter: Transporter | null = null;
+
+const getTransporter = (): Transporter => {
+  if (transporter) {
+    return transporter;
+  }
+
+  const emailUser = process.env.EMAIL_USER;
+  const emailPass = process.env.EMAIL_PASS;
+
+  if (!emailUser || !emailPass) {
+    throw new Error('Missing EMAIL_USER or EMAIL_PASS in environment variables');
+  }
+
+  transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: emailUser,
+      pass: emailPass,
+    },
+  });
+
+  return transporter;
+};
 
 /**
  * Email templates for different notification types
@@ -95,64 +121,61 @@ const EMAIL_TEMPLATES: Record<string, (data: any) => EmailTemplate> = {
       <p>Please try again or contact support.</p>
     `,
   }),
+
+  verifyEmail: (data: { firstName: string; code: string }) => ({
+    name: 'verifyEmail',
+    subject: 'Verify Your Email Address',
+    html: `
+      <h1>Please verify your email</h1>
+      <p>Hi ${data.firstName},</p>
+      <p>Use the following code to verify your email address:</p>
+      <h2>${data.code}</h2>
+      <p>This code will expire in 15 minutes.</p>
+    `,
+  }),
+
+  passwordResetOtp: (data: { firstName: string; code: string }) => ({
+    name: 'passwordResetOtp',
+    subject: 'Reset Your Password',
+    html: `
+      <h1>Password reset code</h1>
+      <p>Hi ${data.firstName},</p>
+      <p>Use the following code to reset your password:</p>
+      <h2>${data.code}</h2>
+      <p>This code will expire in 15 minutes.</p>
+      <p>If you did not request this, you can safely ignore this email.</p>
+    `,
+  }),
 };
 
 /**
- * Send email (placeholder)
- * TODO: Implement actual email sending with chosen provider
+ * Send email using Gmail SMTP (Nodemailer)
  */
 export const sendEmail = async (options: EmailOptions): Promise<{ success: boolean; messageId?: string }> => {
-  // Placeholder implementation
-  // In production, use your email service provider:
-  
-  /*
-  // Example with SendGrid:
-  const sgMail = require('@sendgrid/mail');
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-  
-  const msg = {
-    to: options.to,
-    from: options.from || process.env.EMAIL_FROM,
-    subject: options.subject,
-    text: options.text,
-    html: options.html,
-  };
-  
-  const result = await sgMail.send(msg);
-  return { success: true, messageId: result[0].headers['x-message-id'] };
-  */
+  try {
+    if (!options.html && !options.text) {
+      throw new Error('Email must have either text or html content');
+    }
 
-  /*
-  // Example with AWS SES:
-  const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
-  
-  const sesClient = new SESClient({ region: process.env.AWS_REGION });
-  
-  const command = new SendEmailCommand({
-    Source: options.from || process.env.EMAIL_FROM,
-    Destination: {
-      ToAddresses: Array.isArray(options.to) ? options.to : [options.to],
-    },
-    Message: {
-      Subject: { Data: options.subject },
-      Body: {
-        Text: options.text ? { Data: options.text } : undefined,
-        Html: options.html ? { Data: options.html } : undefined,
-      },
-    },
-  });
-  
-  const result = await sesClient.send(command);
-  return { success: true, messageId: result.MessageId };
-  */
+    const fromAddress = options.from || process.env.EMAIL_FROM || process.env.EMAIL_USER;
 
-  console.log('📧 Email would be sent:', {
-    to: options.to,
-    subject: options.subject,
-    from: options.from || 'noreply@example.com',
-  });
+    if (!fromAddress) {
+      throw new Error('Missing EMAIL_FROM or EMAIL_USER in environment variables');
+    }
 
-  return { success: true, messageId: `mock-${Date.now()}` };
+    const result = await getTransporter().sendMail({
+      to: options.to,
+      from: fromAddress,
+      subject: options.subject,
+      text: options.text,
+      html: options.html,
+    });
+
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Failed to send email:', error);
+    return { success: false };
+  }
 };
 
 /**
@@ -164,7 +187,7 @@ export const sendTemplateEmail = async (
   templateData: any
 ): Promise<{ success: boolean; messageId?: string }> => {
   const templateFn = EMAIL_TEMPLATES[templateName];
-  
+
   if (!templateFn) {
     throw new Error(`Email template "${templateName}" not found`);
   }
@@ -187,8 +210,8 @@ export const sendBulkEmails = async (
 ): Promise<{ success: boolean; sent: number; failed: number }> => {
   // Placeholder implementation
   // In production, use a queue system like Bull or AWS SQS
-  
-  console.log(`📧 Would send ${emails.length} bulk emails`);
+
+  console.log(`Would send ${emails.length} bulk emails`);
 
   let sent = 0;
   let failed = 0;
@@ -213,14 +236,14 @@ export const sendBulkEmails = async (
 export const queueEmail = async (options: EmailOptions): Promise<{ jobId: string }> => {
   // Placeholder implementation
   // In production, add to Bull queue:
-  
+
   /*
   const emailQueue = require('../queues/email.queue');
   const job = await emailQueue.add('send-email', options);
   return { jobId: job.id };
   */
 
-  console.log('📧 Email queued for sending:', options.subject);
+  console.log('Email queued for sending:', options.subject);
 
   return { jobId: `job-${Date.now()}` };
 };

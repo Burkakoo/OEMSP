@@ -74,8 +74,9 @@ The `env` object provides access to all validated environment variables:
 - `AWS_S3_BUCKET` - S3 bucket name
 
 #### Email Configuration
-- `EMAIL_SERVICE_API_KEY` - Email service API key
-- `EMAIL_FROM` - Sender email address
+- `EMAIL_USER` - Gmail address used for SMTP authentication
+- `EMAIL_PASS` - Gmail App Password (16 chars, no spaces)
+- `EMAIL_FROM` - Sender email address (defaults to EMAIL_USER)
 
 #### Redis Configuration
 - `REDIS_URL` - Redis connection string

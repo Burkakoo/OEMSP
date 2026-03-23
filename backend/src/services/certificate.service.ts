@@ -9,59 +9,105 @@ const CACHE_TTL = 300; // 5 minutes
 /**
  * Certificate Service
  * Handles certificate generation, verification, and management
- * 
- * NOTE: This implementation includes placeholder functions for PDF generation and cloud storage.
- * In production, you would need to:
- * 1. Install PDFKit: npm install pdfkit @types/pdfkit
- * 2. Install AWS SDK or cloud storage SDK: npm install @aws-sdk/client-s3
- * 3. Configure cloud storage credentials
- * 4. Implement actual PDF generation with custom templates
- * 5. Upload PDFs to cloud storage (S3, Google Cloud Storage, etc.)
  */
 
 /**
- * Generate PDF certificate (placeholder)
- * TODO: Implement actual PDF generation with PDFKit
+ * Certificate data required for PDF rendering
  */
-const generatePDF = async (certificateData: {
+interface CertificatePdfData {
   studentName: string;
   courseTitle: string;
   instructorName: string;
   completionDate: Date;
   verificationCode: string;
-}): Promise<Buffer> => {
-  // Placeholder implementation
-  // In production, use PDFKit to generate a professional certificate:
-  /*
-  const PDFDocument = require('pdfkit');
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape' });
-  
-  const chunks: Buffer[] = [];
-  doc.on('data', (chunk) => chunks.push(chunk));
-  
-  // Add certificate content
-  doc.fontSize(40).text('Certificate of Completion', { align: 'center' });
-  doc.moveDown();
-  doc.fontSize(20).text(`This certifies that`, { align: 'center' });
-  doc.fontSize(30).text(certificateData.studentName, { align: 'center' });
-  doc.fontSize(20).text(`has successfully completed`, { align: 'center' });
-  doc.fontSize(25).text(certificateData.courseTitle, { align: 'center' });
-  doc.moveDown();
-  doc.fontSize(15).text(`Instructor: ${certificateData.instructorName}`, { align: 'center' });
-  doc.text(`Date: ${certificateData.completionDate.toLocaleDateString()}`, { align: 'center' });
-  doc.text(`Verification Code: ${certificateData.verificationCode}`, { align: 'center' });
-  
-  doc.end();
-  
-  return new Promise((resolve) => {
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
+}
+
+const escapePdfText = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+
+const formatCertificateDate = (value: Date): string =>
+  value.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
   });
-  */
 
-  console.log('Generating PDF certificate for:', certificateData.studentName);
+const toIdString = (value: unknown): string => {
+  if (!value) {
+    return '';
+  }
 
-  // Return placeholder buffer
-  return Buffer.from(`Certificate for ${certificateData.studentName} - ${certificateData.courseTitle}`);
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'object') {
+    const withId = value as { _id?: unknown };
+    if (withId._id) {
+      return String(withId._id);
+    }
+  }
+
+  return String(value);
+};
+
+const buildPdfBuffer = (contentStream: string): Buffer => {
+  const objects: string[] = [];
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objects[2] = '<< /Type /Pages /Kids [3 0 R] /Count 1 >>';
+  objects[3] =
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>';
+  objects[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>';
+  objects[5] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+  objects[6] = `<< /Length ${Buffer.byteLength(contentStream, 'utf8')} >>\nstream\n${contentStream}\nendstream`;
+
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+
+  for (let i = 1; i < objects.length; i++) {
+    const objectBody = objects[i];
+    if (!objectBody) {
+      continue;
+    }
+
+    offsets[i] = Buffer.byteLength(pdf, 'utf8');
+    pdf += `${i} 0 obj\n${objectBody}\nendobj\n`;
+  }
+
+  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length}\n`;
+  pdf += '0000000000 65535 f \n';
+
+  for (let i = 1; i < objects.length; i++) {
+    const offset = offsets[i] ?? 0;
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+
+  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return Buffer.from(pdf, 'utf8');
+};
+
+/**
+ * Generate a lightweight certificate PDF without external dependencies.
+ */
+export const generateCertificatePdf = async (
+  certificateData: CertificatePdfData
+): Promise<Buffer> => {
+  const renderedDate = formatCertificateDate(certificateData.completionDate);
+  const lines = [
+    '/F1 36 Tf 180 500 Td (Certificate of Completion) Tj',
+    '/F2 20 Tf 260 450 Td (This certifies that) Tj',
+    `/F1 30 Tf 160 400 Td (${escapePdfText(certificateData.studentName)}) Tj`,
+    '/F2 20 Tf 215 360 Td (has successfully completed) Tj',
+    `/F1 24 Tf 120 320 Td (${escapePdfText(certificateData.courseTitle)}) Tj`,
+    `/F2 16 Tf 80 250 Td (Instructor: ${escapePdfText(certificateData.instructorName)}) Tj`,
+    `/F2 16 Tf 80 225 Td (Completion Date: ${escapePdfText(renderedDate)}) Tj`,
+    `/F2 14 Tf 80 200 Td (Verification Code: ${escapePdfText(certificateData.verificationCode)}) Tj`,
+  ];
+
+  const contentStream = `BT\n${lines.join('\n')}\nET`;
+  return buildPdfBuffer(contentStream);
 };
 
 /**
@@ -96,6 +142,52 @@ const uploadToCloudStorage = async (
 
   // Return placeholder URL
   return `https://storage.example.com/certificates/${fileName}`;
+};
+
+/**
+ * Get certificate by enrollment ID
+ */
+export const getCertificateByEnrollment = async (
+  enrollmentId: string
+): Promise<ICertificate | null> => {
+  if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
+    throw new Error('Invalid enrollment ID');
+  }
+
+  return Certificate.findOne({ enrollmentId });
+};
+
+/**
+ * Ensure a certificate exists for the enrollment and return it.
+ */
+export const ensureCertificateForEnrollment = async (
+  enrollmentId: string
+): Promise<ICertificate> => {
+  const existingCertificate = await getCertificateByEnrollment(enrollmentId);
+  if (existingCertificate) {
+    return existingCertificate;
+  }
+
+  try {
+    return await generateCertificate(enrollmentId);
+  } catch (error: unknown) {
+    const mongoError = error as { code?: number; message?: string };
+    const duplicateError =
+      mongoError.code === 11000 ||
+      (typeof mongoError.message === 'string' &&
+        mongoError.message.includes('already exists'));
+
+    if (!duplicateError) {
+      throw error;
+    }
+
+    const certificate = await getCertificateByEnrollment(enrollmentId);
+    if (!certificate) {
+      throw error;
+    }
+
+    return certificate;
+  }
 };
 
 /**
@@ -149,7 +241,7 @@ export const generateCertificate = async (enrollmentId: string): Promise<ICertif
   const verificationCode = Certificate.generateVerificationCode();
 
   // Generate PDF
-  const pdfBuffer = await generatePDF({
+  const pdfBuffer = await generateCertificatePdf({
     studentName,
     courseTitle,
     instructorName,
@@ -310,7 +402,7 @@ export const regenerateCertificate = async (certificateId: string): Promise<ICer
   }
 
   // Generate new PDF with existing data
-  const pdfBuffer = await generatePDF({
+  const pdfBuffer = await generateCertificatePdf({
     studentName: certificate.studentName,
     courseTitle: certificate.courseTitle,
     instructorName: certificate.instructorName,
@@ -328,7 +420,7 @@ export const regenerateCertificate = async (certificateId: string): Promise<ICer
 
   // Invalidate caches
   await deleteCache(`certificate:${certificateId}`);
-  await deleteCache(`certificates:student:${certificate.studentId}`);
+  await deleteCache(`certificates:student:${toIdString(certificate.studentId)}`);
 
   return certificate;
 };

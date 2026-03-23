@@ -14,7 +14,10 @@ import {
   TableRow,
   Chip,
   Box,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
+import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 
 interface CourseAnalytic {
   courseId: string;
@@ -23,13 +26,22 @@ interface CourseAnalytic {
   completionRate: number;
   averageQuizScore: number;
   revenue: number;
+  isPublished?: boolean;
 }
 
 interface CourseAnalyticsProps {
   courses: CourseAnalytic[];
+  onEditCourse?: (courseId: string) => void;
+  onDeleteCourse?: (courseId: string, courseName: string) => void;
+  deletingCourseId?: string | null;
 }
 
-const CourseAnalytics: React.FC<CourseAnalyticsProps> = ({ courses }) => {
+const CourseAnalytics: React.FC<CourseAnalyticsProps> = ({
+  courses,
+  onEditCourse,
+  onDeleteCourse,
+  deletingCourseId,
+}) => {
   const getCompletionColor = (rate: number) => {
     if (rate >= 75) return 'success';
     if (rate >= 50) return 'warning';
@@ -61,6 +73,8 @@ const CourseAnalytics: React.FC<CourseAnalyticsProps> = ({ courses }) => {
               <TableCell align="right">Completion Rate</TableCell>
               <TableCell align="right">Avg Quiz Score</TableCell>
               <TableCell align="right">Revenue (ETB)</TableCell>
+              <TableCell align="right">Status</TableCell>
+              <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -79,6 +93,37 @@ const CourseAnalytics: React.FC<CourseAnalyticsProps> = ({ courses }) => {
                   {course.averageQuizScore.toFixed(1)}%
                 </TableCell>
                 <TableCell align="right">{course.revenue}</TableCell>
+                <TableCell align="right">
+                  <Chip
+                    label={course.isPublished ? 'Published' : 'Draft'}
+                    color={course.isPublished ? 'success' : 'default'}
+                    size="small"
+                  />
+                </TableCell>
+                <TableCell align="right">
+                  <Tooltip title="Edit Course">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => onEditCourse?.(course.courseId)}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Delete Course">
+                    <span>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => onDeleteCourse?.(course.courseId, course.courseName)}
+                        disabled={deletingCourseId === course.courseId}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

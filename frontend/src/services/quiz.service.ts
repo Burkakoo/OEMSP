@@ -10,6 +10,11 @@ interface QuizResponse {
   data: Quiz;
 }
 
+interface QuizListResponse {
+  success: boolean;
+  data: Quiz[];
+}
+
 interface QuizResultResponse {
   success: boolean;
   data: QuizResult;
@@ -58,6 +63,19 @@ export const quizService = {
       method: 'POST',
       body: JSON.stringify(quizData),
     });
+  },
+
+  getCourseQuizzes: async (
+    courseId: string,
+    options?: { includeUnpublished?: boolean }
+  ): Promise<QuizListResponse> => {
+    const params = new URLSearchParams();
+    if (options?.includeUnpublished) {
+      params.append('includeUnpublished', 'true');
+    }
+
+    const query = params.toString();
+    return apiRequest<QuizListResponse>(`/courses/${courseId}/quizzes${query ? `?${query}` : ''}`);
   },
 
   updateQuiz: async (quizId: string, quizData: Partial<Quiz>): Promise<QuizResponse> => {

@@ -1,6 +1,9 @@
 import { Response } from 'express';
+import mongoose from 'mongoose';
 import { AuthRequest } from '../middleware/auth.middleware';
 import * as quizService from '../services/quiz.service';
+import Course from '../models/Course';
+import Enrollment from '../models/Enrollment';
 
 /**
  * Quiz Controllers
@@ -101,13 +104,113 @@ export const getQuiz = async (req: AuthRequest, res: Response): Promise<void> =>
 };
 
 /**
+ * List course quizzes
+ * GET /api/v1/courses/:courseId/quizzes
+ */
+export const listCourseQuizzes = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawCourseId = req.params.courseId;
+    const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
+
+    if (!courseId) {
+      res.status(400).json({
+        success: false,
+        message: 'Course ID is required',
+      });
+      return;
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid course ID',
+      });
+      return;
+    }
+
+    const userRole = req.user?.role;
+    const userId = req.user?.userId;
+
+    if (!userRole || !userId) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    const includeUnpublishedQuery = String(req.query.includeUnpublished || '').toLowerCase() === 'true';
+    let includeUnpublished = false;
+
+    if (userRole === 'student') {
+      const enrollment = await Enrollment.findOne({
+        studentId: userId,
+        courseId,
+      }).select('_id');
+
+      if (!enrollment) {
+        res.status(403).json({
+          success: false,
+          message: 'You must be enrolled in this course to view its quizzes',
+        });
+        return;
+      }
+    } else if (userRole === 'instructor') {
+      const course = await Course.findById(courseId).select('instructorId');
+      if (!course) {
+        res.status(404).json({
+          success: false,
+          message: 'Course not found',
+        });
+        return;
+      }
+
+      const isOwner = String(course.instructorId) === userId;
+      if (includeUnpublishedQuery && !isOwner) {
+        res.status(403).json({
+          success: false,
+          message: 'Access denied',
+        });
+        return;
+      }
+
+      includeUnpublished = isOwner && includeUnpublishedQuery;
+    } else if (userRole === 'admin') {
+      includeUnpublished = includeUnpublishedQuery;
+    } else {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied',
+      });
+      return;
+    }
+
+    const quizzes = await quizService.listCourseQuizzes(courseId, {
+      includeUnpublished,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: quizzes,
+    });
+  } catch (error: any) {
+    const statusCode = error.message?.includes('Invalid course ID') ? 400 : 500;
+
+    res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to list quizzes',
+    });
+  }
+};
+
+/**
  * Create quiz
  * POST /api/v1/courses/:courseId/quizzes
  */
 export const createQuiz = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { courseId } = req.params;
-    const { moduleId, title, description, questions, duration, passingScore, maxAttempts } = req.body;
+    const { moduleId, title, description, questions, duration, passingScore, maxAttempts, isPublished } = req.body;
 
     // Validation
     if (!moduleId) {
@@ -177,6 +280,7 @@ export const createQuiz = async (req: AuthRequest, res: Response): Promise<void>
         duration,
         passingScore,
         maxAttempts,
+        isPublished,
       },
       req.user.userId
     );

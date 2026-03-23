@@ -14,6 +14,8 @@ import {
   MenuItem,
   FormHelperText,
   CircularProgress,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import { CreateCourseData, UpdateCourseData, Course } from '@/types/course.types';
@@ -37,6 +39,7 @@ const CourseForm: React.FC<CourseFormProps> = ({
     category: '',
     level: 'beginner',
     price: 0,
+    isFree: false,
     currency: 'ETB',
     thumbnail: '',
   });
@@ -51,6 +54,7 @@ const CourseForm: React.FC<CourseFormProps> = ({
         category: course.category,
         level: course.level,
         price: course.price,
+        isFree: course.isFree || false,
         currency: course.currency,
         thumbnail: course.thumbnail ?? '',
       });
@@ -83,12 +87,15 @@ const CourseForm: React.FC<CourseFormProps> = ({
       newErrors.category = 'Category is required';
     }
 
-    if (Number.isNaN(formData.price)) {
-      newErrors.price = 'Price is required';
-    } else if (formData.price < 0) {
-      newErrors.price = 'Price cannot be negative';
-    } else if (formData.price > 99999.99) {
-      newErrors.price = 'Price cannot exceed 99999.99';
+    // Skip price validation for free courses
+    if (!formData.isFree) {
+      if (Number.isNaN(formData.price)) {
+        newErrors.price = 'Price is required';
+      } else if (formData.price < 0) {
+        newErrors.price = 'Price cannot be negative';
+      } else if (formData.price > 99999.99) {
+        newErrors.price = 'Price cannot exceed 99999.99';
+      }
     }
 
     const thumbnail = (formData.thumbnail ?? '').trim();
@@ -207,7 +214,7 @@ const CourseForm: React.FC<CourseFormProps> = ({
 
       <TextField
         margin="normal"
-        required
+        required={!formData.isFree}
         fullWidth
         id="price"
         label="Price"
@@ -217,8 +224,27 @@ const CourseForm: React.FC<CourseFormProps> = ({
         onChange={handleChange}
         error={!!errors.price}
         helperText={errors.price}
-        disabled={isLoading}
+        disabled={isLoading || formData.isFree}
       />
+
+      <FormControl fullWidth margin="normal">
+        <FormControlLabel
+          control={
+            <Switch
+              checked={formData.isFree}
+              onChange={(e) => {
+                setFormData(prev => ({
+                  ...prev,
+                  isFree: e.target.checked,
+                  price: e.target.checked ? 0 : prev.price
+                }));
+              }}
+              disabled={isLoading}
+            />
+          }
+          label="Free Course"
+        />
+      </FormControl>
 
       <FormControl fullWidth margin="normal">
         <InputLabel id="currency-label">Currency</InputLabel>

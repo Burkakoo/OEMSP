@@ -3,14 +3,12 @@
  */
 
 import React from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Container, Paper, Box } from '@mui/material';
 import PasswordResetForm from '@components/auth/PasswordResetForm';
 
 const ForgotPasswordPage: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
 
   const handleSuccess = () => {
     navigate('/login');
@@ -31,11 +29,7 @@ const ForgotPasswordPage: React.FC = () => {
         }}
       >
         <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
-          <PasswordResetForm
-            token={token || undefined}
-            onSuccess={handleSuccess}
-            onBackToLogin={handleBackToLogin}
-          />
+          <PasswordResetForm onSuccess={handleSuccess} onBackToLogin={handleBackToLogin} />
         </Paper>
       </Box>
     </Container>

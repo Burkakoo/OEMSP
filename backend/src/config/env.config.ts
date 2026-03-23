@@ -39,8 +39,9 @@ export interface EnvConfig {
   AWS_REGION: string;
   AWS_S3_BUCKET: string;
 
-  // Email Service Configuration
-  EMAIL_SERVICE_API_KEY: string;
+  // Email Service Configuration (Gmail SMTP)
+  EMAIL_USER: string;
+  EMAIL_PASS: string;
   EMAIL_FROM: string;
 
   // Redis Configuration
@@ -116,6 +117,7 @@ function validateEnvConfig(): EnvConfig {
   try {
     const nodeEnv = validateNodeEnv(getEnvVariable('NODE_ENV', 'development'));
     const isTestEnv = nodeEnv === 'test';
+    const emailUser = getEnvVariable('EMAIL_USER', isTestEnv ? 'test@example.com' : '');
 
     const config: EnvConfig = {
       // Server Configuration
@@ -145,8 +147,9 @@ function validateEnvConfig(): EnvConfig {
       AWS_S3_BUCKET: getEnvVariable('AWS_S3_BUCKET', isTestEnv ? 'test-bucket' : ''),
 
       // Email Service Configuration
-      EMAIL_SERVICE_API_KEY: getEnvVariable('EMAIL_SERVICE_API_KEY', isTestEnv ? 'test-email-key' : ''),
-      EMAIL_FROM: getEnvVariable('EMAIL_FROM', isTestEnv ? 'test@example.com' : ''),
+      EMAIL_USER: emailUser,
+      EMAIL_PASS: getEnvVariable('EMAIL_PASS', isTestEnv ? 'test-app-password' : ''),
+      EMAIL_FROM: getEnvVariable('EMAIL_FROM', emailUser),
 
       // Redis Configuration
       REDIS_URL: getEnvVariable('REDIS_URL', isTestEnv ? 'redis://localhost:6379' : ''),

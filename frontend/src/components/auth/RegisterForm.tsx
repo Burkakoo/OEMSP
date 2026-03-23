@@ -18,7 +18,7 @@ import {
   FormHelperText,
 } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '@hooks/useAppDispatch';
-import { register, clearError } from '@store/slices/authSlice';
+import { register, verifyEmail, login, clearError } from '@store/slices/authSlice';
 import { RegisterData } from '@/types/auth.types';
 
 interface RegisterFormProps {
@@ -28,7 +28,7 @@ interface RegisterFormProps {
 
 const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) => {
   const dispatch = useAppDispatch();
-  const { isLoading, error, user } = useAppSelector((state) => state.auth);
+  const { isLoading, error } = useAppSelector((state) => state.auth);
 
   const [formData, setFormData] = useState<RegisterData>({
     email: '',
@@ -39,11 +39,15 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
   });
 
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [isVerificationStep, setIsVerificationStep] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<{
     [key: string]: string;
   }>({});
 
-  const validateForm = (): boolean => {
+  const validateRegistrationForm = (): boolean => {
     const errors: { [key: string]: string } = {};
 
     if (!formData.firstName) {
@@ -62,8 +66,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
 
     if (!formData.password) {
       errors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters';
     }
 
     if (!confirmPassword) {
@@ -74,6 +78,27 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
+  };
+
+  const validateVerificationForm = (): boolean => {
+    const errors: { [key: string]: string } = {};
+
+    if (!verificationCode.trim()) {
+      errors.verificationCode = 'OTP code is required';
+    } else if (!/^\d{6}$/.test(verificationCode.trim())) {
+      errors.verificationCode = 'OTP must be a 6-digit code';
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const clearMessages = () => {
+    setLocalError(null);
+    setSuccessMessage(null);
+    if (error) {
+      dispatch(clearError());
+    }
   };
 
   const handleChange = (
@@ -90,9 +115,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
         });
       }
     }
-    if (error) {
-      dispatch(clearError());
-    }
+    clearMessages();
   };
 
   const handleConfirmPasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,42 +127,150 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
         return newErrors;
       });
     }
+    clearMessages();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleVerificationCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setVerificationCode(e.target.value);
+    if (validationErrors.verificationCode) {
+      setValidationErrors((prev: Record<string, string>) => {
+        const newErrors = { ...prev };
+        delete newErrors.verificationCode;
+        return newErrors;
+      });
+    }
+    clearMessages();
+  };
 
-    if (!validateForm()) {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!validateRegistrationForm()) {
       return;
     }
 
     try {
       await dispatch(register(formData)).unwrap();
-      onSuccess?.();
+      setIsVerificationStep(true);
+      setSuccessMessage(`We sent a 6-digit OTP to ${formData.email}. Enter it below to verify your account.`);
+      setValidationErrors({});
     } catch (err) {
-      // Error handled by Redux
+      setLocalError((err as Error).message || 'Registration failed');
     }
   };
 
-  // Show approval pending message for instructors
-  const showApprovalMessage = user && user.role === 'instructor' && !user.isApproved;
+  const handleVerifySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!validateVerificationForm()) {
+      return;
+    }
+
+    try {
+      await dispatch(
+        verifyEmail({
+          email: formData.email,
+          code: verificationCode.trim(),
+        })
+      ).unwrap();
+
+      setSuccessMessage('Email verified. Signing you in...');
+
+      await dispatch(
+        login({
+          email: formData.email,
+          password: formData.password,
+        })
+      ).unwrap();
+
+      onSuccess?.();
+    } catch (err) {
+      setLocalError((err as Error).message || 'Verification failed');
+    }
+  };
+
+  if (isVerificationStep) {
+    return (
+      <Box component="form" onSubmit={handleVerifySubmit} noValidate>
+        <Typography variant="h5" component="h1" gutterBottom>
+          Verify Email
+        </Typography>
+
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Enter the 6-digit OTP sent to {formData.email}.
+        </Typography>
+
+        {(localError || error) && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {localError || error}
+          </Alert>
+        )}
+
+        {successMessage && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            {successMessage}
+          </Alert>
+        )}
+
+        <TextField
+          margin="normal"
+          required
+          fullWidth
+          id="verificationCode"
+          label="OTP Code"
+          name="verificationCode"
+          value={verificationCode}
+          onChange={handleVerificationCodeChange}
+          error={!!validationErrors.verificationCode}
+          helperText={validationErrors.verificationCode}
+          disabled={isLoading}
+          autoFocus
+        />
+
+        <Button
+          type="submit"
+          fullWidth
+          variant="contained"
+          sx={{ mt: 3, mb: 2 }}
+          disabled={isLoading}
+        >
+          {isLoading ? <CircularProgress size={24} /> : 'Verify OTP'}
+        </Button>
+
+        <Box sx={{ textAlign: 'center', mt: 2 }}>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={(e) => {
+              e.preventDefault();
+              onLoginClick?.();
+            }}
+            sx={{ cursor: 'pointer' }}
+          >
+            Back to Login
+          </Link>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
-    <Box component="form" onSubmit={handleSubmit} noValidate>
+    <Box component="form" onSubmit={handleRegisterSubmit} noValidate>
       <Typography variant="h5" component="h1" gutterBottom>
         Register
       </Typography>
 
-      {error && (
+      {(localError || error) && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
+          {localError || error}
         </Alert>
       )}
 
-      {showApprovalMessage && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Your instructor account is pending approval. You will be notified once an admin
-          reviews your application.
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          {successMessage}
         </Alert>
       )}
 
@@ -202,11 +333,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
         >
           <MenuItem value="student">Student</MenuItem>
           <MenuItem value="instructor">Instructor</MenuItem>
-          <MenuItem value="admin">Admin</MenuItem>
         </Select>
-        {validationErrors.role && (
-          <FormHelperText>{validationErrors.role}</FormHelperText>
-        )}
+        {validationErrors.role && <FormHelperText>{validationErrors.role}</FormHelperText>}
       </FormControl>
 
       <TextField

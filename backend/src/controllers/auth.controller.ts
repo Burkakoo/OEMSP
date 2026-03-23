@@ -48,30 +48,52 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Set HTTP-only cookies for tokens
-    res.cookie('accessToken', result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    });
-
-    res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
-
     res.status(201).json({
       success: true,
+      message: result.message,
       data: {
-        user: result.user,
-        token: result.token,
+        email: result.email,
+        requiresEmailVerification: result.requiresEmailVerification ?? true,
       },
     });
   } catch (error) {
     console.error('Register controller error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+};
+
+/**
+ * Verify email OTP code
+ * POST /api/v1/auth/verify-email
+ */
+export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: email, code',
+      });
+      return;
+    }
+
+    const result = await authService.verifyEmailCode(email, code);
+
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Email verified successfully. You can now log in.',
+    });
+  } catch (error) {
+    console.error('Email verification controller error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -230,7 +252,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
 };
 
 /**
- * Request password reset
+ * Request password reset OTP
  * POST /api/v1/auth/reset-password
  */
 export const requestPasswordReset = async (req: Request, res: Response): Promise<void> => {
@@ -250,10 +272,46 @@ export const requestPasswordReset = async (req: Request, res: Response): Promise
     // Always return success to prevent email enumeration
     res.status(200).json({
       success: true,
-      message: 'If the email exists, a password reset link has been sent',
+      message: 'If the email exists, a password reset OTP has been sent',
     });
   } catch (error) {
     console.error('Password reset request controller error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+};
+
+/**
+ * Confirm password reset with OTP
+ * POST /api/v1/auth/reset-password/confirm
+ */
+export const confirmPasswordReset = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: email, code, newPassword',
+      });
+      return;
+    }
+
+    const result = await authService.confirmPasswordReset(email, code, newPassword);
+
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: result.message || 'Password reset successful',
+    });
+  } catch (error) {
+    console.error('Password reset confirm controller error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',

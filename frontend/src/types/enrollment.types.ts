@@ -6,6 +6,7 @@ export interface LessonProgress {
   lessonId: string;
   completed: boolean;
   completedAt?: string;
+  timeSpent?: number;
 }
 
 export interface Enrollment {
@@ -35,4 +36,5 @@ export interface EnrollmentState {
 export interface UpdateProgressData {
   lessonId: string;
   completed: boolean;
+  timeSpent: number;
 }

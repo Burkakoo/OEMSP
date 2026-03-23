@@ -18,7 +18,15 @@
     "format": "npm run format --workspaces",
     "format:check": "npm run format:check --workspaces"
   },
-  "keywords": ["education", "lms", "mern", "monorepo"],
+  "keywords": [
+    "education",
+    "lms",
+    "mern",
+    "monorepo"
+  ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "nodemailer": "^8.0.3"
+  }
 }

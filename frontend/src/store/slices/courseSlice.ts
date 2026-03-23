@@ -102,6 +102,21 @@ export const publishCourse = createAsyncThunk(
   }
 );
 
+export const fetchInstructorCourses = createAsyncThunk(
+  'courses/fetchInstructorCourses',
+  async (_, { getState, rejectWithValue }) => {
+    try {
+      const state = getState() as { auth: { user: { _id: string } | null } };
+      const instructorId = state.auth.user?._id;
+      if (!instructorId) throw new Error('Not authenticated');
+      const response = await courseService.getCourses({ instructorId });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue((error as Error).message);
+    }
+  }
+);
+
 export const unpublishCourse = createAsyncThunk(
   'courses/unpublishCourse',
   async (id: string, { rejectWithValue }) => {
@@ -144,6 +159,22 @@ const courseSlice = createSlice({
         state.pagination = action.payload.pagination;
       })
       .addCase(fetchCourses.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
+
+    // Fetch instructor courses
+    builder
+      .addCase(fetchInstructorCourses.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchInstructorCourses.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.courses = action.payload.courses;
+        state.pagination = action.payload.pagination;
+      })
+      .addCase(fetchInstructorCourses.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       });

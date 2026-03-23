@@ -97,6 +97,10 @@ export const userService = {
       },
     };
   },
+
+  deleteUser: async (userId: string): Promise<void> => {
+    await apiRequest(`/users/${userId}`, { method: 'DELETE' });
+  },
 };
 
 export default userService;

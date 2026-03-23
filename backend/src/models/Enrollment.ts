@@ -11,7 +11,7 @@ export interface ILessonProgress {
 export interface IEnrollment extends Document {
   studentId: mongoose.Types.ObjectId;
   courseId: mongoose.Types.ObjectId;
-  paymentId: mongoose.Types.ObjectId;
+  paymentId?: mongoose.Types.ObjectId;
   enrolledAt: Date;
   progress: ILessonProgress[];
   completionPercentage: number;
@@ -69,7 +69,7 @@ const EnrollmentSchema = new Schema<IEnrollment>(
     paymentId: {
       type: Schema.Types.ObjectId,
       ref: 'Payment',
-      required: [true, 'Payment ID is required'],
+      required: false, // Made optional for free courses
     },
     enrolledAt: {
       type: Date,

@@ -42,6 +42,8 @@ export interface IUser extends Document {
   profile: IUserProfile;
   isActive: boolean;
   isEmailVerified: boolean;
+  emailVerificationCode?: string;
+  emailVerificationCodeExpiresAt?: Date;
   isApproved: boolean;
   approvedBy?: mongoose.Types.ObjectId;
   approvedAt?: Date;
@@ -176,6 +178,13 @@ const UserSchema = new Schema<IUser>(
     isEmailVerified: {
       type: Boolean,
       default: false,
+    },
+    emailVerificationCode: {
+      type: String,
+      trim: true,
+    },
+    emailVerificationCodeExpiresAt: {
+      type: Date,
     },
     isApproved: {
       type: Boolean,

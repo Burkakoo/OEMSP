@@ -44,11 +44,26 @@ export interface AuthResponse {
   message?: string;
 }
 
+export interface RegisterResponse {
+  success: boolean;
+  data?: {
+    email: string;
+    requiresEmailVerification: boolean;
+  };
+  message?: string;
+}
+
+export interface VerifyEmailData {
+  email: string;
+  code: string;
+}
+
 export interface PasswordResetRequest {
   email: string;
 }
 
 export interface PasswordResetData {
-  token: string;
+  email: string;
+  code: string;
   newPassword: string;
 }

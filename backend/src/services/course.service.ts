@@ -3,7 +3,14 @@
  * Handles course management operations including creation, updates, modules, and lessons
  */
 
-import Course, { IModule, ILesson, CourseLevel, LessonType } from '../models/Course';
+import Course, {
+  IModule,
+  ILesson,
+  IAttachment,
+  CourseLevel,
+  LessonType,
+  ALLOWED_FILE_TYPES,
+} from '../models/Course';
 import mongoose from 'mongoose';
 import * as redis from '../config/redis.config';
 
@@ -51,6 +58,14 @@ export interface LessonDTO {
   }>;
 }
 
+export interface AttachmentDTO {
+  _id?: mongoose.Types.ObjectId;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  fileUrl: string;
+}
+
 export interface CourseFilters {
   category?: string;
   level?: CourseLevel;
@@ -90,6 +105,7 @@ export interface CourseDTO {
   category: string;
   level: CourseLevel;
   price: number;
+  isFree: boolean;
   thumbnail?: string;
   modules: IModule[];
   prerequisites: string[];
@@ -117,6 +133,19 @@ export interface ICourseService {
   addLesson(courseId: string, moduleId: string, lessonData: LessonDTO, instructorId: string): Promise<ILesson>;
   updateLesson(courseId: string, moduleId: string, lessonId: string, updates: LessonDTO, instructorId: string): Promise<ILesson>;
   deleteLesson(courseId: string, moduleId: string, lessonId: string, instructorId: string): Promise<void>;
+  addAttachment(
+    courseId: string,
+    moduleId: string,
+    lessonId: string,
+    attachmentData: AttachmentDTO,
+    instructorId: string
+  ): Promise<IAttachment>;
+  getAttachment(attachmentId: string): Promise<{
+    attachment: IAttachment;
+    courseId: string;
+    instructorId: string;
+  }>;
+  deleteAttachment(attachmentId: string, instructorId: string): Promise<void>;
   publishCourse(courseId: string, instructorId: string): Promise<CourseDTO>;
   unpublishCourse(courseId: string, instructorId: string): Promise<CourseDTO>;
 }
@@ -764,6 +793,157 @@ class CourseService implements ICourseService {
   }
 
   /**
+   * Add attachment to a lesson
+   */
+  async addAttachment(
+    courseId: string,
+    moduleId: string,
+    lessonId: string,
+    attachmentData: AttachmentDTO,
+    instructorId: string
+  ): Promise<IAttachment> {
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      throw new Error('Invalid course ID');
+    }
+    if (!mongoose.Types.ObjectId.isValid(moduleId)) {
+      throw new Error('Invalid module ID');
+    }
+    if (!mongoose.Types.ObjectId.isValid(lessonId)) {
+      throw new Error('Invalid lesson ID');
+    }
+    if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+      throw new Error('Invalid instructor ID');
+    }
+
+    const normalizedFileType = attachmentData.fileType.toLowerCase();
+    if (!ALLOWED_FILE_TYPES.includes(normalizedFileType)) {
+      throw new Error(`Unsupported file type: ${normalizedFileType}`);
+    }
+
+    const course = await Course.findById(courseId).exec();
+    if (!course) {
+      throw new Error('Course not found');
+    }
+    if (course.instructorId.toString() !== instructorId) {
+      throw new Error('You can only modify your own courses');
+    }
+
+    const module = (course.modules as any).id(moduleId);
+    if (!module) {
+      throw new Error('Module not found');
+    }
+
+    const lesson = module.lessons.id(lessonId);
+    if (!lesson) {
+      throw new Error('Lesson not found');
+    }
+
+    const attachment: any = {
+      _id: attachmentData._id || new mongoose.Types.ObjectId(),
+      fileName: attachmentData.fileName,
+      fileType: normalizedFileType,
+      fileSize: attachmentData.fileSize,
+      fileUrl: attachmentData.fileUrl,
+      uploadedAt: new Date(),
+      isDownloadable: true,
+    };
+
+    lesson.attachments.push(attachment);
+    await course.save();
+
+    await this.invalidateCourseCache(courseId);
+    await this.invalidateCourseListCache();
+
+    return attachment;
+  }
+
+  /**
+   * Get attachment by ID and include owning course metadata
+   */
+  async getAttachment(attachmentId: string): Promise<{
+    attachment: IAttachment;
+    courseId: string;
+    instructorId: string;
+  }> {
+    if (!mongoose.Types.ObjectId.isValid(attachmentId)) {
+      throw new Error('Invalid attachment ID');
+    }
+
+    const course = await Course.findOne({
+      'modules.lessons.attachments._id': new mongoose.Types.ObjectId(attachmentId),
+    }).exec();
+
+    if (!course) {
+      throw new Error('Attachment not found');
+    }
+
+    for (const module of course.modules) {
+      for (const lesson of module.lessons) {
+        const attachment = lesson.attachments.find(
+          (a) => a._id.toString() === attachmentId
+        );
+        if (attachment) {
+          return {
+            attachment,
+            courseId: course._id.toString(),
+            instructorId: course.instructorId.toString(),
+          };
+        }
+      }
+    }
+
+    throw new Error('Attachment not found');
+  }
+
+  /**
+   * Delete attachment by ID
+   */
+  async deleteAttachment(attachmentId: string, instructorId: string): Promise<void> {
+    if (!mongoose.Types.ObjectId.isValid(attachmentId)) {
+      throw new Error('Invalid attachment ID');
+    }
+    if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+      throw new Error('Invalid instructor ID');
+    }
+
+    const course = await Course.findOne({
+      'modules.lessons.attachments._id': new mongoose.Types.ObjectId(attachmentId),
+    }).exec();
+
+    if (!course) {
+      throw new Error('Attachment not found');
+    }
+
+    if (course.instructorId.toString() !== instructorId) {
+      throw new Error('You can only modify your own courses');
+    }
+
+    let removed = false;
+    for (const module of course.modules) {
+      for (const lesson of module.lessons) {
+        const index = lesson.attachments.findIndex(
+          (a) => a._id.toString() === attachmentId
+        );
+        if (index !== -1) {
+          lesson.attachments.splice(index, 1);
+          removed = true;
+          break;
+        }
+      }
+      if (removed) break;
+    }
+
+    if (!removed) {
+      throw new Error('Attachment not found');
+    }
+
+    await course.save();
+
+    await this.invalidateCourseCache(course._id.toString());
+    await this.invalidateCourseListCache();
+  }
+
+  /**
    * Publish a course
    * 
    * Requirements:
@@ -890,6 +1070,7 @@ class CourseService implements ICourseService {
       category: course.category,
       level: course.level,
       price: course.price,
+      isFree: course.isFree,
       thumbnail: course.thumbnail,
       modules: course.modules,
       prerequisites: course.prerequisites,

@@ -10,11 +10,36 @@ const router = Router();
  */
 
 /**
+ * @route   POST /api/v1/certificates/enrollments/:enrollmentId/generate
+ * @desc    Generate certificate for a completed enrollment
+ * @access  Private (Enrollment owner or Admin)
+ */
+router.post(
+  '/enrollments/:enrollmentId/generate',
+  authenticate,
+  certificateController.generateCertificateForEnrollment
+);
+
+/**
+ * @route   GET /api/v1/certificates/:id/download
+ * @desc    Download certificate PDF
+ * @access  Private (Certificate owner or Admin)
+ */
+router.get('/:id/download', authenticate, certificateController.downloadCertificate);
+
+/**
  * @route   GET /api/v1/certificates/:id
  * @desc    Get certificate by ID
  * @access  Private (Certificate owner or Admin)
  */
 router.get('/:id', authenticate, certificateController.getCertificate);
+
+/**
+ * @route   POST /api/v1/certificates/:id/regenerate
+ * @desc    Regenerate certificate
+ * @access  Private (Certificate owner or Admin)
+ */
+router.post('/:id/regenerate', authenticate, certificateController.regenerateCertificate);
 
 /**
  * @route   GET /api/v1/certificates
@@ -29,12 +54,5 @@ router.get('/', authenticate, certificateController.listCertificates);
  * @access  Public
  */
 router.post('/verify', certificateController.verifyCertificate);
-
-/**
- * @route   POST /api/v1/certificates/:id/regenerate
- * @desc    Regenerate certificate
- * @access  Private (Certificate owner or Admin)
- */
-router.post('/:id/regenerate', authenticate, certificateController.regenerateCertificate);
 
 export default router;

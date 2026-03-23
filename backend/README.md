@@ -84,8 +84,9 @@ AWS_SECRET_ACCESS_KEY=...
 AWS_S3_BUCKET=...
 
 # Email
-EMAIL_SERVICE_API_KEY=...
-EMAIL_FROM=noreply@yourdomain.com
+EMAIL_USER=your@gmail.com
+EMAIL_PASS=your_16_char_gmail_app_password
+EMAIL_FROM=your@gmail.com
 
 # Redis
 REDIS_URL=redis://localhost:6379
@@ -163,7 +164,7 @@ npm run test:coverage    # Generate coverage report
 - **Security**: Helmet.js, CORS
 - **File Upload**: Multer
 - **Payment**: Stripe
-- **Email**: AWS SES / SendGrid
+- **Email**: Gmail SMTP (Nodemailer)
 - **Storage**: AWS S3
 
 ## API Documentation

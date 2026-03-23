@@ -7,6 +7,8 @@ import {
   AuthResponse,
   LoginCredentials,
   RegisterData,
+  RegisterResponse,
+  VerifyEmailData,
   PasswordResetRequest,
   PasswordResetData,
 } from '@/types/auth.types';
@@ -19,8 +21,15 @@ export const authService = {
     });
   },
 
-  register: async (data: RegisterData): Promise<AuthResponse> => {
-    return apiRequest<AuthResponse>('/auth/register', {
+  register: async (data: RegisterData): Promise<RegisterResponse> => {
+    return apiRequest<RegisterResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  verifyEmail: async (data: VerifyEmailData): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>('/auth/verify-email', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -39,14 +48,14 @@ export const authService = {
   },
 
   requestPasswordReset: async (data: PasswordResetRequest): Promise<{ message: string }> => {
-    return apiRequest<{ message: string }>('/auth/password-reset-request', {
+    return apiRequest<{ message: string }>('/auth/reset-password', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   resetPassword: async (data: PasswordResetData): Promise<{ message: string }> => {
-    return apiRequest<{ message: string }>('/auth/password-reset', {
+    return apiRequest<{ message: string }>('/auth/reset-password/confirm', {
       method: 'POST',
       body: JSON.stringify(data),
     });

@@ -29,6 +29,7 @@ export interface CourseAnalytics {
   completionRate: number;
   averageQuizScore: number;
   revenue: number;
+  isPublished?: boolean;
 }
 
 export interface EnrollmentTrend {
@@ -84,6 +85,7 @@ type BackendInstructorAnalytics = {
     title: string;
     enrollments: number;
     completionRate: number;
+    isPublished?: boolean;
   }>;
   recentEnrollments?: Array<{
     studentName: string;
@@ -106,6 +108,7 @@ const normalizeInstructorAnalytics = (raw: any): InstructorAnalytics => {
         // Not yet provided by backend analytics
         averageQuizScore: 0,
         revenue: 0,
+        isPublished: Boolean(c.isPublished),
       }))
     : [];
 

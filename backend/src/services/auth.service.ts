@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import User, { IUser, UserRole } from '../models/User';
 import { env } from '../config/env.config';
 import * as redis from '../config/redis.config';
+import { sendTemplateEmail } from './email.service';
 
 // DTOs and Interfaces
 export interface RegisterDTO {
@@ -28,6 +29,9 @@ export interface AuthResponse {
   refreshToken?: string;
   user?: UserProfile;
   error?: string;
+  message?: string;
+  email?: string;
+  requiresEmailVerification?: boolean;
 }
 
 export interface UserProfile {
@@ -63,10 +67,12 @@ export interface IAuthService {
   verifyToken(token: string): Promise<TokenPayload>;
   refreshToken(refreshToken: string): Promise<AuthResponse>;
   resetPassword(email: string): Promise<void>;
+  confirmPasswordReset(email: string, code: string, newPassword: string): Promise<AuthResponse>;
   changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void>;
   approveInstructor(instructorId: string, adminId: string): Promise<IUser>;
   rejectInstructor(instructorId: string, adminId: string, reason: string): Promise<void>;
   getPendingInstructors(): Promise<IUser[]>;
+  verifyEmailCode(email: string, code: string): Promise<AuthResponse>;
 }
 
 /**
@@ -75,16 +81,53 @@ export interface IAuthService {
 class AuthService implements IAuthService {
   private readonly TOKEN_BLACKLIST_PREFIX = 'blacklist:token:';
   private readonly REFRESH_TOKEN_PREFIX = 'refresh:token:';
+  private readonly PASSWORD_RESET_CODE_PREFIX = 'password:reset:code:';
   private readonly ACCESS_TOKEN_EXPIRY = '24h';
   private readonly REFRESH_TOKEN_EXPIRY = '7d';
+  private readonly EMAIL_VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+  private readonly PASSWORD_RESET_CODE_TTL_SECONDS = 15 * 60; // 15 minutes
+
+  private generateVerificationCode(): string {
+    // 6-digit numeric code
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private async sendVerificationEmail(user: IUser): Promise<void> {
+    const code = user.emailVerificationCode;
+    if (!user.email || !code) return;
+
+    const result = await sendTemplateEmail(user.email, 'verifyEmail', {
+      firstName: user.firstName,
+      code,
+    });
+
+    if (!result.success) {
+      throw new Error('Failed to send verification OTP email');
+    }
+  }
+
+  private async sendPasswordResetCodeEmail(user: IUser, code: string): Promise<void> {
+    if (!user.email) return;
+
+    const result = await sendTemplateEmail(user.email, 'passwordResetOtp', {
+      firstName: user.firstName,
+      code,
+    });
+
+    if (!result.success) {
+      throw new Error('Failed to send password reset OTP email');
+    }
+  }
 
   /**
    * Register a new user
    */
   async register(userData: RegisterDTO): Promise<AuthResponse> {
     try {
+      const normalizedEmail = userData.email.trim().toLowerCase();
+
       // Validate email format
-      if (!this.isValidEmail(userData.email)) {
+      if (!this.isValidEmail(normalizedEmail)) {
         return { success: false, error: 'Invalid email format' };
       }
 
@@ -98,37 +141,42 @@ class AuthService implements IAuthService {
       }
 
       // Check if user already exists
-      const existingUser = await User.findOne({ email: userData.email.toLowerCase() });
+      const existingUser = await User.findOne({ email: normalizedEmail });
       if (existingUser) {
         return { success: false, error: 'Email already registered' };
       }
 
       // Create new user
+      const verificationCode = this.generateVerificationCode();
+      const verificationExpires = new Date(Date.now() + this.EMAIL_VERIFICATION_CODE_TTL_MS);
+
       const user = new User({
-        email: userData.email.toLowerCase(),
+        email: normalizedEmail,
         passwordHash: userData.password, // Will be hashed by pre-save hook
         firstName: userData.firstName,
         lastName: userData.lastName,
         role: userData.role,
         isActive: true,
         isEmailVerified: false,
+        emailVerificationCode: verificationCode,
+        emailVerificationCodeExpiresAt: verificationExpires,
         // isApproved defaults based on role (false for instructors, true for others)
       });
 
       await user.save();
 
-      // Generate tokens
-      const token = this.generateAccessToken(user);
-      const refreshToken = this.generateRefreshToken(user);
-
-      // Store refresh token in Redis
-      await this.storeRefreshToken(user._id.toString(), refreshToken);
+      // Send verification email (best effort)
+      try {
+        await this.sendVerificationEmail(user);
+      } catch (err) {
+        console.error('Failed to send verification email:', err);
+      }
 
       return {
         success: true,
-        token,
-        refreshToken,
-        user: this.mapUserToProfile(user),
+        message: 'Registration successful. Please verify your email with the OTP sent to your inbox.',
+        email: user.email,
+        requiresEmailVerification: true,
       };
     } catch (error) {
       console.error('Registration error:', error);
@@ -144,17 +192,20 @@ class AuthService implements IAuthService {
    */
   async login(credentials: LoginDTO): Promise<AuthResponse> {
     try {
+      const normalizedEmail = credentials.email.trim().toLowerCase();
+      const normalizedPassword = credentials.password.trim();
+
       // Validate input format
-      if (!this.isValidEmail(credentials.email)) {
+      if (!this.isValidEmail(normalizedEmail)) {
         return { success: false, error: 'Invalid credentials' };
       }
 
-      if (credentials.password.length < 8) {
+      if (normalizedPassword.length < 8) {
         return { success: false, error: 'Invalid credentials' };
       }
 
       // Find user by email
-      const user = await User.findOne({ email: credentials.email.toLowerCase() });
+      const user = await User.findOne({ email: normalizedEmail });
       if (!user) {
         // Generic error to prevent user enumeration
         return { success: false, error: 'Invalid credentials' };
@@ -165,13 +216,21 @@ class AuthService implements IAuthService {
         return { success: false, error: 'Account is deactivated' };
       }
 
+      // Check if email is verified
+      if (!user.isEmailVerified) {
+        return {
+          success: false,
+          error: 'Email not verified. Please check your inbox for the verification code.',
+        };
+      }
+
       // Check if instructor is approved
       if (user.role === UserRole.INSTRUCTOR && !user.isApproved) {
         return { success: false, error: 'Account pending admin approval' };
       }
 
       // Verify password
-      const isPasswordValid = await user.comparePassword(credentials.password);
+      const isPasswordValid = await user.comparePassword(normalizedPassword);
       if (!isPasswordValid) {
         return { success: false, error: 'Invalid credentials' };
       }
@@ -201,6 +260,51 @@ class AuthService implements IAuthService {
         success: false, 
         error: 'Authentication failed' 
       };
+    }
+  }
+
+  /**
+   * Verify email OTP code
+   */
+  async verifyEmailCode(email: string, code: string): Promise<AuthResponse> {
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedCode = code.trim();
+
+      if (!this.isValidEmail(normalizedEmail) || !normalizedCode) {
+        return { success: false, error: 'Invalid request' };
+      }
+
+      const user = await User.findOne({ email: normalizedEmail });
+      if (!user) {
+        return { success: false, error: 'Invalid verification code' };
+      }
+
+      if (user.isEmailVerified) {
+        return { success: true, error: 'Email already verified' };
+      }
+
+      if (!user.emailVerificationCode || !user.emailVerificationCodeExpiresAt) {
+        return { success: false, error: 'Verification code not found. Please request a new one.' };
+      }
+
+      if (new Date() > user.emailVerificationCodeExpiresAt) {
+        return { success: false, error: 'Verification code has expired. Please request a new one.' };
+      }
+
+      if (user.emailVerificationCode !== normalizedCode) {
+        return { success: false, error: 'Invalid verification code' };
+      }
+
+      user.isEmailVerified = true;
+      user.emailVerificationCode = undefined;
+      user.emailVerificationCodeExpiresAt = undefined;
+      await user.save();
+
+      return { success: true };
+    } catch (error) {
+      console.error('Email verification error:', error);
+      return { success: false, error: 'Verification failed' };
     }
   }
 
@@ -292,6 +396,11 @@ class AuthService implements IAuthService {
         return { success: false, error: 'Account pending admin approval' };
       }
 
+      // Block token refresh for unverified users
+      if (!user.isEmailVerified) {
+        return { success: false, error: 'Email not verified. Please verify your email first.' };
+      }
+
       // Generate new tokens (token rotation)
       const newAccessToken = this.generateAccessToken(user);
       const newRefreshToken = this.generateRefreshToken(user);
@@ -320,19 +429,19 @@ class AuthService implements IAuthService {
    */
   async resetPassword(email: string): Promise<void> {
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+
       // Validate email format
-      if (!this.isValidEmail(email)) {
+      if (!this.isValidEmail(normalizedEmail)) {
         // Don't reveal validation errors (security)
         return;
       }
-
-      const normalizedEmail = email.toLowerCase();
 
       // Check rate limit: 3 requests per hour per email
       const rateLimitKey = `password:reset:ratelimit:${normalizedEmail}`;
       const requestCount = await redis.get(rateLimitKey);
       
-      if (requestCount && parseInt(requestCount) >= 3) {
+      if (requestCount && parseInt(requestCount, 10) >= 3) {
         // Don't reveal rate limit to prevent information disclosure
         return;
       }
@@ -340,42 +449,73 @@ class AuthService implements IAuthService {
       const user = await User.findOne({ email: normalizedEmail });
       
       // Don't reveal if user exists (security)
-      if (!user) {
-        // Still increment rate limit counter to prevent email enumeration
+      if (!user || !user.isActive) {
         await this.incrementResetRateLimit(rateLimitKey);
         return;
       }
 
-      // Check if user account is active
-      if (!user.isActive) {
-        return;
-      }
+      const code = this.generateVerificationCode();
+      const resetCodeKey = `${this.PASSWORD_RESET_CODE_PREFIX}${normalizedEmail}`;
 
-      // Generate password reset token (1 hour expiration)
-      const resetToken = jwt.sign(
-        { 
-          userId: user._id.toString(), 
-          email: user.email,
-          type: 'password_reset' 
-        },
-        env.JWT_SECRET,
-        { expiresIn: '1h' }
-      );
-
-      // Store reset token in Redis with 1 hour expiration (3600 seconds)
-      const resetKey = `password:reset:${user._id}`;
-      await redis.set(resetKey, resetToken, 3600);
-
-      // Increment rate limit counter (1 hour expiration)
+      // Store OTP in Redis with 15-minute expiry
+      await redis.set(resetCodeKey, code, this.PASSWORD_RESET_CODE_TTL_SECONDS);
       await this.incrementResetRateLimit(rateLimitKey);
 
-      // TODO: Send password reset email with token
-      // Email should contain a link like: https://domain.com/reset-password?token={resetToken}
-      console.log(`Password reset token for ${email}: ${resetToken}`);
+      // Send OTP email (best effort)
+      try {
+        await this.sendPasswordResetCodeEmail(user, code);
+      } catch (err) {
+        console.error('Failed to send password reset OTP email:', err);
+      }
     } catch (error) {
       console.error('Password reset error:', error);
       // Don't throw error to prevent information disclosure
       // Silently fail from user perspective
+    }
+  }
+
+  /**
+   * Confirm password reset using OTP
+   */
+  async confirmPasswordReset(email: string, code: string, newPassword: string): Promise<AuthResponse> {
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedCode = code.trim();
+      const normalizedNewPassword = newPassword.trim();
+
+      if (!this.isValidEmail(normalizedEmail) || !normalizedCode || !normalizedNewPassword) {
+        return { success: false, error: 'Invalid request' };
+      }
+      const user = await User.findOne({ email: normalizedEmail });
+
+      if (!user || !user.isActive) {
+        return { success: false, error: 'Invalid or expired reset code' };
+      }
+
+      const resetCodeKey = `${this.PASSWORD_RESET_CODE_PREFIX}${normalizedEmail}`;
+      const storedCode = await redis.get(resetCodeKey);
+
+      if (!storedCode || storedCode !== normalizedCode) {
+        return { success: false, error: 'Invalid or expired reset code' };
+      }
+
+      const passwordValidation = User.validatePasswordStrength(normalizedNewPassword);
+      if (!passwordValidation.valid) {
+        return { success: false, error: passwordValidation.errors.join(', ') };
+      }
+
+      // Update password (hashed by model pre-save hook)
+      user.passwordHash = normalizedNewPassword;
+      await user.save();
+
+      // Invalidate OTP and active refresh sessions
+      const refreshKey = `${this.REFRESH_TOKEN_PREFIX}${user._id.toString()}`;
+      await redis.del(resetCodeKey, refreshKey);
+
+      return { success: true, message: 'Password reset successful' };
+    } catch (error) {
+      console.error('Confirm password reset error:', error);
+      return { success: false, error: 'Password reset failed' };
     }
   }
 
@@ -577,7 +717,7 @@ class AuthService implements IAuthService {
       await redis.set(rateLimitKey, '1', 3600);
     } else {
       // Increment counter (Redis INCR would be better but using set for consistency)
-      const newCount = parseInt(currentCount) + 1;
+      const newCount = parseInt(currentCount, 10) + 1;
       // Get remaining TTL to preserve it
       const ttl = await redis.ttl(rateLimitKey);
       await redis.set(rateLimitKey, newCount.toString(), ttl > 0 ? ttl : 3600);
