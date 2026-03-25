@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Certificate, { ICertificate } from '../models/Certificate';
 import Enrollment from '../models/Enrollment';
 import User from '../models/User';
+import Quiz from '../models/Quiz';
+import QuizResult from '../models/QuizResult';
 import { getCache, setCache, deleteCache } from '../utils/cache.utils';
 
 const CACHE_TTL = 300; // 5 minutes
@@ -49,6 +51,59 @@ const toIdString = (value: unknown): string => {
   }
 
   return String(value);
+};
+
+const assertStudentPassedAllPublishedCourseQuizzes = async (
+  studentId: string,
+  courseId: string
+): Promise<void> => {
+  if (!mongoose.Types.ObjectId.isValid(studentId)) {
+    throw new Error('Invalid student ID');
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(courseId)) {
+    throw new Error('Invalid course ID');
+  }
+
+  const publishedQuizIds = await Quiz.find({ courseId, isPublished: true }).distinct(
+    '_id'
+  );
+
+  if (publishedQuizIds.length === 0) {
+    return;
+  }
+
+  const passedQuizIds = await QuizResult.find({
+    studentId,
+    quizId: { $in: publishedQuizIds },
+    passed: true,
+  }).distinct('quizId');
+
+  const passedQuizIdSet = new Set(passedQuizIds.map((quizId) => String(quizId)));
+  const passedQuizCount = publishedQuizIds.reduce((count, quizId) => {
+    return passedQuizIdSet.has(String(quizId)) ? count + 1 : count;
+  }, 0);
+
+  if (passedQuizCount < publishedQuizIds.length) {
+    throw new Error(
+      `Student must pass all published quizzes before getting a certificate (${passedQuizCount}/${publishedQuizIds.length} passed)`
+    );
+  }
+};
+
+export const assertCertificateEligibility = async (params: {
+  studentId: string;
+  courseId: string;
+  isCompleted: boolean;
+}): Promise<void> => {
+  if (!params.isCompleted) {
+    throw new Error('Enrollment must be completed before generating a certificate');
+  }
+
+  await assertStudentPassedAllPublishedCourseQuizzes(
+    params.studentId,
+    params.courseId
+  );
 };
 
 const buildPdfBuffer = (contentStream: string): Buffer => {
@@ -213,11 +268,6 @@ export const generateCertificate = async (enrollmentId: string): Promise<ICertif
     throw new Error('Enrollment not found');
   }
 
-  // Verify enrollment is completed
-  if (!enrollment.isCompleted) {
-    throw new Error('Enrollment is not completed');
-  }
-
   // Get student, course, and instructor details
   const student = enrollment.studentId as any;
   const course = enrollment.courseId as any;
@@ -225,6 +275,12 @@ export const generateCertificate = async (enrollmentId: string): Promise<ICertif
   if (!student || !course) {
     throw new Error('Student or course data not found');
   }
+
+  await assertCertificateEligibility({
+    studentId: toIdString(student._id || student),
+    courseId: toIdString(course._id || course),
+    isCompleted: enrollment.isCompleted,
+  });
 
   // Get instructor details
   const instructor = await User.findById(course.instructorId);

@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OEMSP — Online Education & Management System Platform</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #060b1a;
+      --bg2: #0d1630;
+      --primary: #6c63ff;
+      --secondary: #00d4ff;
+      --accent: #ff6584;
+      --gold: #ffd700;
+      --green: #00e676;
+      --card-bg: rgba(255,255,255,0.04);
+      --card-border: rgba(108,99,255,0.25);
+      --text: #e8eaf6;
+      --muted: #8892b0;
+      --glow: 0 0 30px rgba(108,99,255,0.4);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* ─── ANIMATED BG ─── */
+    .bg-orbs {
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    }
+    .orb {
+      position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.12;
+      animation: orb-drift 12s ease-in-out infinite alternate;
+    }
+    .orb1 { width: 600px; height: 600px; background: var(--primary); top: -200px; left: -150px; animation-delay: 0s; }
+    .orb2 { width: 500px; height: 500px; background: var(--secondary); bottom: -100px; right: -200px; animation-delay: 3s; }
+    .orb3 { width: 350px; height: 350px; background: var(--accent); top: 40%; left: 40%; animation-delay: 6s; }
+    @keyframes orb-drift {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(40px, 60px) scale(1.1); }
+    }
+
+    /* ─── NAV ─── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 4rem;
+      background: rgba(6,11,26,0.85); backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(108,99,255,0.15);
+    }
+    .logo {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.5rem; font-weight: 700;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+    .nav-badge {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: white; padding: 0.35rem 1rem; border-radius: 50px;
+      font-size: 0.8rem; font-weight: 600;
+    }
+
+    /* ─── HERO ─── */
+    #hero {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 8rem 2rem 4rem;
+    }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: rgba(108,99,255,0.15); border: 1px solid rgba(108,99,255,0.35);
+      padding: 0.4rem 1rem; border-radius: 50px;
+      font-size: 0.8rem; font-weight: 600; color: var(--secondary);
+      letter-spacing: 1px; text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      animation: fade-in 0.8s ease both;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }
+    .hero-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2.8rem, 6vw, 5.5rem);
+      font-weight: 800; line-height: 1.1; letter-spacing: -2px;
+      animation: fade-up 0.9s ease 0.1s both;
+    }
+    .hero-title span {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 50%, var(--accent) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero-sub {
+      margin-top: 1.2rem; max-width: 680px;
+      font-size: 1.15rem; color: var(--muted); line-height: 1.7;
+      animation: fade-up 0.9s ease 0.2s both;
+    }
+    .hero-tech-row {
+      display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center;
+      margin-top: 2rem; animation: fade-up 0.9s ease 0.3s both;
+    }
+    .tech-pill {
+      background: var(--card-bg); border: 1px solid var(--card-border);
+      padding: 0.4rem 0.9rem; border-radius: 50px; font-size: 0.85rem; font-weight: 500;
+      transition: all 0.3s;
+    }
+    .tech-pill:hover { background: rgba(108,99,255,0.2); border-color: var(--primary); color: white; transform: translateY(-2px); }
+    .hero-stats {
+      display: flex; gap: 3rem; margin-top: 3rem;
+      animation: fade-up 0.9s ease 0.4s both;
+    }
+    .stat { text-align: center; }
+    .stat-num {
+      font-size: 2.2rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .stat-label { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; }
+    .scroll-hint {
+      position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+      color: var(--muted); font-size: 0.8rem;
+      animation: bounce 2s infinite;
+    }
+    @keyframes bounce { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(8px)} }
+    .scroll-arrow { font-size: 1.2rem; }
+
+    @keyframes fade-in { from{opacity:0} to{opacity:1} }
+    @keyframes fade-up { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ─── SECTION WRAPPER ─── */
+    section {
+      position: relative; z-index: 1;
+      padding: 6rem 4rem; max-width: 1400px; margin: 0 auto;
+    }
+    .section-eyebrow {
+      font-size: 0.8rem; font-weight: 700; color: var(--secondary);
+      text-transform: uppercase; letter-spacing: 2px; margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(1.8rem, 3vw, 2.8rem); font-weight: 700; line-height: 1.2;
+      margin-bottom: 0.75rem;
+    }
+    .section-sub { color: var(--muted); max-width: 580px; line-height: 1.7; }
+    .divider {
+      width: 100%; border: none; border-top: 1px solid rgba(108,99,255,0.12);
+      margin: 0;
+    }
+
+    /* ─── ARCHITECTURE ─── */
+    .arch-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    .arch-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px; padding: 2rem;
+      transition: all 0.4s; position: relative; overflow: hidden;
+    }
+    .arch-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, transparent 60%, rgba(108,99,255,0.07));
+      pointer-events: none;
+    }
+    .arch-card:hover {
+      transform: translateY(-6px);
+      border-color: var(--primary);
+      box-shadow: var(--glow);
+    }
+    .arch-icon {
+      font-size: 2.5rem; margin-bottom: 1rem;
+      display: flex; align-items: center; justify-content: center;
+      width: 64px; height: 64px; border-radius: 16px;
+      background: rgba(108,99,255,0.15);
+    }
+    .arch-card h3 { font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .arch-card p { color: var(--muted); font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem; }
+    .tech-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .tag {
+      background: rgba(108,99,255,0.12); border: 1px solid rgba(108,99,255,0.25);
+      padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.75rem; color: var(--secondary);
+    }
+
+    /* ─── FEATURES ─── */
+    .features-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.2rem;
+      margin-top: 3rem;
+    }
+    .feature-card {
+      background: var(--card-bg); border: 1px solid var(--card-border);
+      border-radius: 16px; padding: 1.5rem;
+      transition: all 0.35s;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px); border-color: var(--primary);
+      box-shadow: 0 0 20px rgba(108,99,255,0.25);
+    }
+    .feature-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+    .feature-card h4 { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .feature-card p { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+
+    /* ─── ROLES ─── */
+    .roles-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    .role-card {
+      border-radius: 20px; padding: 2rem; position: relative; overflow: hidden;
+      transition: transform 0.35s;
+    }
+    .role-card:hover { transform: translateY(-6px); }
+    .role-student { background: linear-gradient(135deg, rgba(108,99,255,0.15), rgba(0,212,255,0.08)); border: 1px solid rgba(108,99,255,0.3); }
+    .role-instructor { background: linear-gradient(135deg, rgba(255,101,132,0.12), rgba(255,215,0,0.06)); border: 1px solid rgba(255,101,132,0.3); }
+    .role-admin { background: linear-gradient(135deg, rgba(0,230,118,0.1), rgba(108,99,255,0.08)); border: 1px solid rgba(0,230,118,0.3); }
+    .role-badge {
+      display: inline-block;
+      padding: 0.3rem 0.8rem; border-radius: 50px;
+      font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+      margin-bottom: 1rem;
+    }
+    .student-badge { background: rgba(108,99,255,0.2); color: #a5a0ff; }
+    .instructor-badge { background: rgba(255,101,132,0.2); color: #ff8fa3; }
+    .admin-badge { background: rgba(0,230,118,0.2); color: #00e676; }
+    .role-card h3 { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.75rem; }
+    .role-card ul { list-style: none; }
+    .role-card ul li {
+      padding: 0.45rem 0; color: var(--muted); font-size: 0.9rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      display: flex; gap: 0.5rem; align-items: flex-start;
+    }
+    .role-card ul li:last-child { border-bottom: none; }
+    .check { color: var(--green); font-size: 0.9rem; }
+
+    /* ─── API SECTION ─── */
+    .api-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;
+      margin-top: 3rem;
+    }
+    .api-group {
+      background: var(--card-bg); border: 1px solid var(--card-border);
+      border-radius: 16px; padding: 1.5rem;
+    }
+    .api-group h4 { font-weight: 700; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+    .api-route {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.4rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: 0.82rem; font-family: monospace;
+    }
+    .api-route:last-child { border-bottom: none; }
+    .method {
+      padding: 0.15rem 0.5rem; border-radius: 5px; font-size: 0.72rem; font-weight: 700;
+      min-width: 46px; text-align: center;
+    }
+    .get { background: rgba(0,230,118,0.2); color: #00e676; }
+    .post { background: rgba(108,99,255,0.25); color: #a5a0ff; }
+    .put { background: rgba(255,215,0,0.2); color: #ffd700; }
+    .del { background: rgba(255,101,132,0.2); color: #ff8fa3; }
+    .route-path { color: var(--muted); }
+
+    /* ─── DB SCHEMA ─── */
+    .schema-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;
+      margin-top: 3rem;
+    }
+    .model-card {
+      background: var(--card-bg); border: 1px solid var(--card-border);
+      border-radius: 14px; padding: 1.2rem;
+    }
+    .model-name {
+      font-weight: 700; font-size: 1rem; margin-bottom: 0.7rem;
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+    .model-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .model-fields { list-style: none; }
+    .model-fields li { font-size: 0.8rem; color: var(--muted); padding: 0.2rem 0; font-family: monospace; }
+    .model-fields li span { color: var(--secondary); }
+
+    /* ─── FOOTER ─── */
+    footer {
+      position: relative; z-index: 1;
+      text-align: center; padding: 3rem;
+      border-top: 1px solid rgba(108,99,255,0.12);
+      color: var(--muted); font-size: 0.9rem;
+    }
+    footer strong {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    /* ─── PROGRESS BAR ─── */
+    .progress-bar {
+      position: fixed; top: 0; left: 0; height: 3px; z-index: 200;
+      background: linear-gradient(90deg, var(--primary), var(--secondary), var(--accent));
+      width: 0%; transition: width 0.1s linear;
+    }
+
+    /* ─── FLOW DIAGRAM ─── */
+    .flow-diagram {
+      display: flex; align-items: center; justify-content: center;
+      gap: 0; margin-top: 3rem; flex-wrap: wrap;
+    }
+    .flow-node {
+      background: var(--card-bg); border: 1px solid var(--card-border);
+      border-radius: 14px; padding: 1.2rem 1.5rem; text-align: center;
+      min-width: 140px; transition: all 0.3s;
+    }
+    .flow-node:hover { border-color: var(--primary); box-shadow: var(--glow); }
+    .flow-icon { font-size: 1.8rem; margin-bottom: 0.4rem; }
+    .flow-label { font-size: 0.85rem; font-weight: 600; }
+    .flow-sub { font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; }
+    .flow-arrow {
+      width: 50px; height: 2px;
+      background: linear-gradient(90deg, var(--primary), var(--secondary));
+      position: relative; flex-shrink: 0;
+    }
+    .flow-arrow::after {
+      content: '▶'; position: absolute; right: -8px; top: -9px;
+      color: var(--secondary); font-size: 0.9rem;
+    }
+
+    /* ─── ANIMATIONS ON SCROLL ─── */
+    .reveal { opacity: 0; transform: translateY(30px); transition: all 0.7s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- Animated orb BG -->
+<div class="bg-orbs">
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+</div>
+
+<!-- Progress bar -->
+<div class="progress-bar" id="progressBar"></div>
+
+<!-- Nav -->
+<nav>
+  <div class="logo">OEMSP</div>
+  <div class="nav-badge">📚 LMS Platform Overview</div>
+</nav>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<div id="hero">
+  <div class="hero-eyebrow"><div class="dot"></div>MERN Stack · Full-Stack Platform</div>
+  <h1 class="hero-title">Online Education &<br/><span>Management System</span></h1>
+  <p class="hero-sub">
+    A comprehensive Learning Management System (LMS) built with MongoDB, Express.js, React &amp; Node.js —
+    featuring role-based access, payment processing, quizzes, certificates, and real-time analytics.
+  </p>
+  <div class="hero-tech-row">
+    <div class="tech-pill">⚛️ React 18</div>
+    <div class="tech-pill">🟢 Node.js 18+</div>
+    <div class="tech-pill">🍃 MongoDB Atlas</div>
+    <div class="tech-pill">⚡ Express.js</div>
+    <div class="tech-pill">🎨 Material-UI</div>
+    <div class="tech-pill">🔴 Redis</div>
+    <div class="tech-pill">💳 Stripe</div>
+    <div class="tech-pill">🔐 JWT Auth</div>
+    <div class="tech-pill">📘 TypeScript</div>
+    <div class="tech-pill">⚙️ Vite</div>
+    <div class="tech-pill">🗃️ Redux Toolkit</div>
+  </div>
+  <div class="hero-stats">
+    <div class="stat"><div class="stat-num">26</div><div class="stat-label">Frontend Pages</div></div>
+    <div class="stat"><div class="stat-num">3</div><div class="stat-label">User Roles</div></div>
+    <div class="stat"><div class="stat-num">8+</div><div class="stat-label">API Modules</div></div>
+    <div class="stat"><div class="stat-num">6+</div><div class="stat-label">DB Models</div></div>
+  </div>
+  <div class="scroll-hint">
+    <span>Scroll to explore</span>
+    <span class="scroll-arrow">↓</span>
+  </div>
+</div>
+
+<hr class="divider" />
+
+<!-- ═══════════════ ARCHITECTURE ═══════════════ -->
+<section>
+  <div class="reveal">
+    <div class="section-eyebrow">🏗️ System Architecture</div>
+    <h2 class="section-title">Three-Tier Full-Stack Architecture</h2>
+    <p class="section-sub">The application follows a clean MVC pattern with a decoupled frontend and backend, communicating via a RESTful API.</p>
+  </div>
+
+  <!-- Flow diagram -->
+  <div class="flow-diagram reveal">
+    <div class="flow-node">
+      <div class="flow-icon">🌐</div>
+      <div class="flow-label">Browser</div>
+      <div class="flow-sub">User Interface</div>
+    </div>
+    <div class="flow-arrow"></div>
+    <div class="flow-node">
+      <div class="flow-icon">⚛️</div>
+      <div class="flow-label">React + Vite</div>
+      <div class="flow-sub">Port 3000</div>
+    </div>
+    <div class="flow-arrow"></div>
+    <div class="flow-node">
+      <div class="flow-icon">⚡</div>
+      <div class="flow-label">Express API</div>
+      <div class="flow-sub">Port 5000</div>
+    </div>
+    <div class="flow-arrow"></div>
+    <div class="flow-node">
+      <div class="flow-icon">🍃</div>
+      <div class="flow-label">MongoDB Atlas</div>
+      <div class="flow-sub">Database</div>
+    </div>
+    <div class="flow-arrow"></div>
+    <div class="flow-node">
+      <div class="flow-icon">🔴</div>
+      <div class="flow-label">Redis</div>
+      <div class="flow-sub">Cache & Sessions</div>
+    </div>
+  </div>
+
+  <div class="arch-grid">
+    <div class="arch-card reveal">
+      <div class="arch-icon">⚛️</div>
+      <h3>Frontend — React App</h3>
+      <p>A modern SPA built with React 18 and TypeScript. Uses Redux Toolkit for global state management, React Router for client-side routing, and Material-UI for a polished component library.</p>
+      <div class="tech-tags">
+        <span class="tag">React 18</span><span class="tag">TypeScript</span><span class="tag">Redux Toolkit</span>
+        <span class="tag">MUI</span><span class="tag">React Router</span><span class="tag">Vite</span>
+      </div>
+    </div>
+    <div class="arch-card reveal">
+      <div class="arch-icon">⚡</div>
+      <h3>Backend — Express API</h3>
+      <p>A robust RESTful API server built with Node.js and Express.js, following the MVC pattern. Handles authentication with JWT and bcrypt, request validation, file uploads, and Stripe webhooks.</p>
+      <div class="tech-tags">
+        <span class="tag">Node.js 18+</span><span class="tag">Express.js</span><span class="tag">JWT</span>
+        <span class="tag">Bcrypt</span><span class="tag">Multer</span><span class="tag">Stripe SDK</span>
+      </div>
+    </div>
+    <div class="arch-card reveal">
+      <div class="arch-icon">🍃</div>
+      <h3>Database — MongoDB + Redis</h3>
+      <p>MongoDB Atlas is the primary database with Mongoose ODM for schema definition and validation. Redis handles session caching, rate limiting, and transient data to boost performance.</p>
+      <div class="tech-tags">
+        <span class="tag">MongoDB Atlas</span><span class="tag">Mongoose</span><span class="tag">Redis</span>
+        <span class="tag">Replica Sets</span><span class="tag">Connection Pooling</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══════════════ FEATURES ═══════════════ -->
+<section>
+  <div class="reveal">
+    <div class="section-eyebrow">✨ Platform Features</div>
+    <h2 class="section-title">Everything You Need in an LMS</h2>
+    <p class="section-sub">From course creation to payment and certification — the platform covers the full lifecycle of online education.</p>
+  </div>
+  <div class="features-grid">
+    <div class="feature-card reveal">
+      <div class="feature-icon">👤</div>
+      <h4>User Management</h4>
+      <p>Student, Instructor & Admin roles with JWT-secured authentication, password hashing, and profile management.</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon">📚</div>
+      <h4>Course Management</h4>
+      <p>Full CRUD for courses with modules, lessons, video content, attachments, and publish/unpublish workflows.</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon">📝</div>
+      <h4>Quiz & Assessments</h4>
+      <p>Timed quizzes with multiple-choice questions, automatic grading, and detailed result pages with score history.</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon">💳</div>
+      <h4>Payment Processing</h4>
+      <p>Stripe integration for secure course purchases with checkout sessions, success/failure pages, and webhook handling.</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon">🎓</div>
+      <h4>Certificate Generation</h4>
+      <p>Automatic certificate issuance upon 100% course completion, visible from the student dashboard.</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon">🔔</div>
+      <h4>Real-time Notifications</h4>
+      <p>In-app notifications for enrollment, course updates, quiz results, and important platform events.</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon">📊</div>
+      <h4>Analytics Dashboards</h4>
+      <p>Rich analytics for instructors (revenue, enrollments) and admins (platform-wide KPIs and user stats).</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon">🎯</div>
+      <h4>Progress Tracking</h4>
+      <p>Students can track lesson completion, overall course progress percentage, and quiz scores in one dashboard.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══════════════ USER ROLES ═══════════════ -->
+<section>
+  <div class="reveal">
+    <div class="section-eyebrow">👥 User Roles</div>
+    <h2 class="section-title">Role-Based Access Control</h2>
+    <p class="section-sub">Three distinct user personas with carefully scoped permissions and dedicated dashboards.</p>
+  </div>
+  <div class="roles-grid">
+    <div class="role-card role-student reveal">
+      <span class="role-badge student-badge">🎒 Student</span>
+      <h3>Student</h3>
+      <ul>
+        <li><span class="check">✓</span> Browse & enroll in courses</li>
+        <li><span class="check">✓</span> Watch video lessons</li>
+        <li><span class="check">✓</span> Take timed quizzes</li>
+        <li><span class="check">✓</span> Track learning progress</li>
+        <li><span class="check">✓</span> Purchase courses via Stripe</li>
+        <li><span class="check">✓</span> Download certificates</li>
+        <li><span class="check">✓</span> View notification history</li>
+      </ul>
+    </div>
+    <div class="role-card role-instructor reveal">
+      <span class="role-badge instructor-badge">🏫 Instructor</span>
+      <h3>Instructor</h3>
+      <ul>
+        <li><span class="check">✓</span> Create & manage courses</li>
+        <li><span class="check">✓</span> Upload lessons & materials</li>
+        <li><span class="check">✓</span> Create quizzes & assessments</li>
+        <li><span class="check">✓</span> View enrolled students list</li>
+        <li><span class="check">✓</span> Revenue analytics dashboard</li>
+        <li><span class="check">✓</span> Publish / unpublish courses</li>
+        <li><span class="check">✓</span> Manage course pricing</li>
+      </ul>
+    </div>
+    <div class="role-card role-admin reveal">
+      <span class="role-badge admin-badge">🛡️ Admin</span>
+      <h3>Admin</h3>
+      <ul>
+        <li><span class="check">✓</span> Full platform oversight</li>
+        <li><span class="check">✓</span> Approve instructor accounts</li>
+        <li><span class="check">✓</span> Manage all users & courses</li>
+        <li><span class="check">✓</span> Platform-wide analytics</li>
+        <li><span class="check">✓</span> Moderate content</li>
+        <li><span class="check">✓</span> Configure system settings</li>
+        <li><span class="check">✓</span> Access all dashboards</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══════════════ API ROUTES ═══════════════ -->
+<section>
+  <div class="reveal">
+    <div class="section-eyebrow">🔌 REST API</div>
+    <h2 class="section-title">Backend API Modules</h2>
+    <p class="section-sub">Express.js RESTful API following MVC pattern with JWT-protected routes and role-based middleware.</p>
+  </div>
+  <div class="api-grid">
+    <div class="api-group reveal">
+      <h4>🔐 Authentication</h4>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/auth/register</span></div>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/auth/login</span></div>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/auth/logout</span></div>
+      <div class="api-route"><span class="method get">GET</span><span class="route-path">/api/auth/me</span></div>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/auth/forgot-password</span></div>
+    </div>
+    <div class="api-group reveal">
+      <h4>📚 Courses</h4>
+      <div class="api-route"><span class="method get">GET</span><span class="route-path">/api/courses</span></div>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/courses</span></div>
+      <div class="api-route"><span class="method get">GET</span><span class="route-path">/api/courses/:id</span></div>
+      <div class="api-route"><span class="method put">PUT</span><span class="route-path">/api/courses/:id</span></div>
+      <div class="api-route"><span class="method del">DEL</span><span class="route-path">/api/courses/:id</span></div>
+    </div>
+    <div class="api-group reveal">
+      <h4>🎓 Enrollment & Progress</h4>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/enrollments</span></div>
+      <div class="api-route"><span class="method get">GET</span><span class="route-path">/api/enrollments/my</span></div>
+      <div class="api-route"><span class="method put">PUT</span><span class="route-path">/api/enrollments/:id/progress</span></div>
+      <div class="api-route"><span class="method get">GET</span><span class="route-path">/api/enrollments/:id/certificate</span></div>
+    </div>
+    <div class="api-group reveal">
+      <h4>📝 Quizzes & Payments</h4>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/quizzes</span></div>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/quizzes/:id/submit</span></div>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/payments/checkout</span></div>
+      <div class="api-route"><span class="method post">POST</span><span class="route-path">/api/payments/webhook</span></div>
+      <div class="api-route"><span class="method get">GET</span><span class="route-path">/api/payments/history</span></div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══════════════ DB MODELS ═══════════════ -->
+<section>
+  <div class="reveal">
+    <div class="section-eyebrow">🗄️ Data Models</div>
+    <h2 class="section-title">MongoDB Schema Design</h2>
+    <p class="section-sub">Mongoose models with strict typing, validation, and relational references across the platform.</p>
+  </div>
+  <div class="schema-grid">
+    <div class="model-card reveal">
+      <div class="model-name"><div class="model-dot" style="background:#6c63ff"></div> User</div>
+      <ul class="model-fields">
+        <li>_id: <span>ObjectId</span></li>
+        <li>name: <span>String</span></li>
+        <li>email: <span>String (unique)</span></li>
+        <li>password: <span>String (hashed)</span></li>
+        <li>role: <span>"student"|"instructor"|"admin"</span></li>
+        <li>isApproved: <span>Boolean</span></li>
+        <li>createdAt: <span>Date</span></li>
+      </ul>
+    </div>
+    <div class="model-card reveal">
+      <div class="model-name"><div class="model-dot" style="background:#00d4ff"></div> Course</div>
+      <ul class="model-fields">
+        <li>_id: <span>ObjectId</span></li>
+        <li>title: <span>String</span></li>
+        <li>instructor: <span>ref: User</span></li>
+        <li>modules: <span>[ Module ]</span></li>
+        <li>price: <span>Number</span></li>
+        <li>category: <span>String</span></li>
+        <li>isPublished: <span>Boolean</span></li>
+      </ul>
+    </div>
+    <div class="model-card reveal">
+      <div class="model-name"><div class="model-dot" style="background:#ff6584"></div> Enrollment</div>
+      <ul class="model-fields">
+        <li>_id: <span>ObjectId</span></li>
+        <li>student: <span>ref: User</span></li>
+        <li>course: <span>ref: Course</span></li>
+        <li>progress: <span>Number (0–100)</span></li>
+        <li>completedLessons: <span>[ ObjectId ]</span></li>
+        <li>certificateIssued: <span>Boolean</span></li>
+        <li>enrolledAt: <span>Date</span></li>
+      </ul>
+    </div>
+    <div class="model-card reveal">
+      <div class="model-name"><div class="model-dot" style="background:#ffd700"></div> Quiz</div>
+      <ul class="model-fields">
+        <li>_id: <span>ObjectId</span></li>
+        <li>course: <span>ref: Course</span></li>
+        <li>title: <span>String</span></li>
+        <li>questions: <span>[ Question ]</span></li>
+        <li>timeLimit: <span>Number (minutes)</span></li>
+        <li>passingScore: <span>Number</span></li>
+      </ul>
+    </div>
+    <div class="model-card reveal">
+      <div class="model-name"><div class="model-dot" style="background:#00e676"></div> Payment</div>
+      <ul class="model-fields">
+        <li>_id: <span>ObjectId</span></li>
+        <li>student: <span>ref: User</span></li>
+        <li>course: <span>ref: Course</span></li>
+        <li>amount: <span>Number</span></li>
+        <li>stripeSessionId: <span>String</span></li>
+        <li>status: <span>"pending"|"success"|"failed"</span></li>
+        <li>paidAt: <span>Date</span></li>
+      </ul>
+    </div>
+    <div class="model-card reveal">
+      <div class="model-name"><div class="model-dot" style="background:#ff9f43"></div> Notification</div>
+      <ul class="model-fields">
+        <li>_id: <span>ObjectId</span></li>
+        <li>user: <span>ref: User</span></li>
+        <li>type: <span>String (enum)</span></li>
+        <li>message: <span>String</span></li>
+        <li>isRead: <span>Boolean</span></li>
+        <li>createdAt: <span>Date</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ═══════════════ PROJECT STRUCTURE ═══════════════ -->
+<section>
+  <div class="reveal">
+    <div class="section-eyebrow">📁 Project Structure</div>
+    <h2 class="section-title">Monorepo Layout</h2>
+    <p class="section-sub">Clean separation between frontend, backend, and a simple UI prototype, managed at the root level.</p>
+  </div>
+  <div class="arch-grid reveal" style="margin-top:2rem">
+    <div class="arch-card">
+      <div class="arch-icon">⚛️</div>
+      <h3>frontend/</h3>
+      <p>Vite + React app. Structured into <code>pages/</code>, <code>components/</code>, <code>store/</code>, <code>services/</code>, <code>hooks/</code>, and <code>types/</code> for maximum scalability.</p>
+      <div class="tech-tags">
+        <span class="tag">26 pages</span><span class="tag">8 component folders</span><span class="tag">Redux slices</span>
+      </div>
+    </div>
+    <div class="arch-card">
+      <div class="arch-icon">⚡</div>
+      <h3>backend/src/</h3>
+      <p>Express app with <code>controllers/</code>, <code>routes/</code>, <code>models/</code>, <code>middleware/</code>, <code>services/</code>, <code>utils/</code>, and full Jest test coverage.</p>
+      <div class="tech-tags">
+        <span class="tag">MVC pattern</span><span class="tag">Jest tests</span><span class="tag">TypeScript</span>
+      </div>
+    </div>
+    <div class="arch-card">
+      <div class="arch-icon">🎨</div>
+      <h3>ui/</h3>
+      <p>Standalone HTML/CSS/JS prototype — a lightweight UI preview that pairs with the full React frontend for quick design iterations.</p>
+      <div class="tech-tags">
+        <span class="tag">HTML5</span><span class="tag">Vanilla CSS</span><span class="tag">JavaScript</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer>
+  <p>Built with ❤️ · <strong>OEMSP</strong> — Online Education &amp; Management System Platform</p>
+  <p style="margin-top:0.5rem;font-size:0.8rem">MERN Stack · TypeScript · MongoDB Atlas · Redis · Stripe · JWT</p>
+</footer>
+
+<script>
+  // Progress bar
+  window.addEventListener('scroll', () => {
+    const scrolled = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
+    document.getElementById('progressBar').style.width = scrolled + '%';
+  });
+
+  // Reveal on scroll
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
