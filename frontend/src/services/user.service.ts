@@ -5,6 +5,7 @@
 import apiRequest from './api';
 
 export type UserRole = 'student' | 'instructor' | 'admin';
+export type PermissionMode = 'inherit' | 'override';
 
 export interface UserListFilters {
   role?: UserRole;
@@ -20,6 +21,9 @@ export interface UserListItem {
   lastName: string;
   role: UserRole;
   isActive: boolean;
+  permissionMode?: PermissionMode;
+  customPermissions?: string[];
+  permissions?: string[];
   createdAt: string;
 }
 
@@ -30,6 +34,9 @@ interface BackendUserProfileDTO {
   lastName: string;
   role: UserRole;
   isActive: boolean;
+  permissionMode?: PermissionMode;
+  customPermissions?: string[];
+  permissions?: string[];
   createdAt: string;
 }
 
@@ -55,6 +62,37 @@ export interface ListUsersResult {
   };
 }
 
+export interface PermissionCatalogItem {
+  key: string;
+  label: string;
+  description: string;
+  category: string;
+  defaultRoles: UserRole[];
+}
+
+export interface RolePermissionDefaults {
+  role: UserRole;
+  defaultPermissions: string[];
+}
+
+interface BackendPermissionCatalogResponse {
+  success: boolean;
+  data: {
+    permissions: PermissionCatalogItem[];
+    roleDefaults: RolePermissionDefaults[];
+  };
+}
+
+export interface PermissionCatalogResult {
+  permissions: PermissionCatalogItem[];
+  roleDefaults: RolePermissionDefaults[];
+}
+
+export interface UpdateUserPermissionsPayload {
+  permissionMode?: PermissionMode;
+  customPermissions?: string[];
+}
+
 const normalizeUser = (raw: BackendUserProfileDTO): UserListItem => {
   return {
     _id: String(raw?.id ?? ''),
@@ -63,6 +101,9 @@ const normalizeUser = (raw: BackendUserProfileDTO): UserListItem => {
     lastName: raw?.lastName ?? '',
     role: raw?.role ?? 'student',
     isActive: Boolean(raw?.isActive),
+    permissionMode: raw?.permissionMode,
+    customPermissions: Array.isArray(raw?.customPermissions) ? raw.customPermissions : [],
+    permissions: Array.isArray(raw?.permissions) ? raw.permissions : [],
     createdAt: raw?.createdAt ? String(raw.createdAt) : new Date().toISOString(),
   };
 };
@@ -101,7 +142,38 @@ export const userService = {
   deleteUser: async (userId: string): Promise<void> => {
     await apiRequest(`/users/${userId}`, { method: 'DELETE' });
   },
+
+  setUserStatus: async (userId: string, isActive: boolean): Promise<void> => {
+    await apiRequest(`/users/${userId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    });
+  },
+
+  getPermissionCatalog: async (): Promise<PermissionCatalogResult> => {
+    const response = await apiRequest<BackendPermissionCatalogResponse>(
+      '/users/permissions/catalog'
+    );
+
+    return {
+      permissions: Array.isArray(response?.data?.permissions)
+        ? response.data.permissions
+        : [],
+      roleDefaults: Array.isArray(response?.data?.roleDefaults)
+        ? response.data.roleDefaults
+        : [],
+    };
+  },
+
+  updateUserPermissions: async (
+    userId: string,
+    payload: UpdateUserPermissionsPayload
+  ): Promise<void> => {
+    await apiRequest(`/users/${userId}/permissions`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 export default userService;
-

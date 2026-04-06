@@ -114,6 +114,7 @@ const EditQuizPage: React.FC = () => {
 
         <QuizForm
           initialData={currentQuiz}
+          courseId={typeof currentQuiz.courseId === 'string' ? currentQuiz.courseId : currentQuiz.courseId._id}
           onSubmit={handleSubmit}
           onCancel={handleCancel}
         />

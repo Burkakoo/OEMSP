@@ -24,6 +24,9 @@ interface LessonListProps {
   onDelete?: (lessonId: string) => void;
   onPlay?: (lessonId: string) => void;
   showActions?: boolean;
+  selectedLessonId?: string | null;
+  isLessonLocked?: (lesson: Lesson) => boolean;
+  getLessonStatusLabel?: (lesson: Lesson) => string | undefined;
 }
 
 const LessonList: React.FC<LessonListProps> = ({
@@ -32,6 +35,9 @@ const LessonList: React.FC<LessonListProps> = ({
   onDelete,
   onPlay,
   showActions = false,
+  selectedLessonId,
+  isLessonLocked,
+  getLessonStatusLabel,
 }) => {
   if (lessons.length === 0) {
     return (
@@ -48,7 +54,8 @@ const LessonList: React.FC<LessonListProps> = ({
           key={lesson._id}
           sx={{
             border: 1,
-            borderColor: 'divider',
+            borderColor: selectedLessonId === lesson._id ? 'primary.main' : 'divider',
+            bgcolor: selectedLessonId === lesson._id ? 'action.selected' : undefined,
             borderRadius: 1,
             mb: 1,
             cursor: onPlay ? 'pointer' : 'default',
@@ -96,6 +103,14 @@ const LessonList: React.FC<LessonListProps> = ({
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                   <Chip label={`${lesson.duration} min`} size="small" />
+                  {lesson.isDripEnabled && (
+                    <Chip
+                      label={getLessonStatusLabel?.(lesson) ?? `Drips after ${lesson.dripDelayDays} day(s)`}
+                      size="small"
+                      color={isLessonLocked?.(lesson) ? 'warning' : 'default'}
+                      variant={isLessonLocked?.(lesson) ? 'filled' : 'outlined'}
+                    />
+                  )}
                   {lesson.attachments && lesson.attachments.length > 0 && (
                     <Chip
                       label={`${lesson.attachments.length} attachment(s)`}

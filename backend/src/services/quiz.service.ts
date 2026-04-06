@@ -4,6 +4,8 @@ import QuizResult, { IQuizResult, IQuizAnswer } from '../models/QuizResult';
 import Course from '../models/Course';
 import Enrollment from '../models/Enrollment';
 import { getCache, setCache, deleteCache } from '../utils/cache.utils';
+import { getQuestionBankItemsByIds } from './questionBank.service';
+import { normalizeQuestionInput, validateQuestion } from '../utils/question.utils';
 
 const CACHE_TTL = 300; // 5 minutes
 const getQuizCacheKeys = (quizId: string): string[] => [
@@ -20,69 +22,75 @@ const invalidateQuizCache = async (quizId: string): Promise<void> => {
  * Handles all quiz-related business logic
  */
 
-/**
- * Validate question based on type
- */
-const validateQuestion = (question: Partial<IQuestion>): { valid: boolean; errors: string[] } => {
-  const errors: string[] = [];
+const shuffleArray = <T>(items: T[]): T[] => {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const currentItem = shuffled[index] as T;
+    const swapItem = shuffled[swapIndex] as T;
+    shuffled[index] = swapItem;
+    shuffled[swapIndex] = currentItem;
+  }
+  return shuffled;
+};
 
-  if (!question.type) {
-    errors.push('Question type is required');
-    return { valid: false, errors };
+const normalizeQuizQuestion = (question: Partial<IQuestion>): Partial<IQuestion> => {
+  const normalizedQuestion = normalizeQuestionInput(question);
+
+  const questionBankItemId = (question as any)?.questionBankItemId;
+  if (questionBankItemId && mongoose.Types.ObjectId.isValid(String(questionBankItemId))) {
+    (normalizedQuestion as any).questionBankItemId = new mongoose.Types.ObjectId(
+      String(questionBankItemId)
+    );
   }
 
-  if (!question.text || question.text.length < 5) {
-    errors.push('Question text must be at least 5 characters');
+  return normalizedQuestion;
+};
+
+const ensureLinkedQuestionBankItemsExist = async (
+  courseId: string,
+  questions: Partial<IQuestion>[]
+): Promise<void> => {
+  const linkedIds = questions
+    .map((question) => (question as any)?.questionBankItemId)
+    .filter((value): value is mongoose.Types.ObjectId | string => Boolean(value))
+    .map((value) => String(value));
+
+  if (linkedIds.length === 0) {
+    return;
   }
 
-  if (!question.points || question.points <= 0) {
-    errors.push('Question points must be greater than 0');
+  const linkedItems = await getQuestionBankItemsByIds({
+    courseId,
+    itemIds: linkedIds,
+  });
+
+  if (linkedItems.length !== Array.from(new Set(linkedIds)).length) {
+    throw new Error('One or more linked question bank items could not be found for this course');
+  }
+};
+
+const buildStudentQuizView = (quiz: IQuiz | any): IQuiz => {
+  const quizObject = JSON.parse(JSON.stringify(quiz));
+
+  if (quizObject.shuffleQuestions) {
+    quizObject.questions = shuffleArray(quizObject.questions);
   }
 
-  // Type-specific validation
-  switch (question.type) {
-    case QuestionType.MULTIPLE_CHOICE:
-      if (!question.options || question.options.length < 2 || question.options.length > 6) {
-        errors.push('Multiple choice questions must have 2-6 options');
+  if (quizObject.shuffleOptions) {
+    quizObject.questions = quizObject.questions.map((question: any) => {
+      if (!Array.isArray(question.options) || question.options.length <= 1) {
+        return question;
       }
-      if (typeof question.correctAnswer !== 'string') {
-        errors.push('Multiple choice correct answer must be a string');
-      }
-      break;
 
-    case QuestionType.TRUE_FALSE:
-      // True/false can have empty options or exactly 2
-      if (question.options && question.options.length > 0 && question.options.length !== 2) {
-        errors.push('True/false questions must have 0 or 2 options');
-      }
-      if (typeof question.correctAnswer !== 'string') {
-        errors.push('True/false correct answer must be a string');
-      }
-      break;
-
-    case QuestionType.MULTI_SELECT:
-      if (!question.options || question.options.length < 2 || question.options.length > 6) {
-        errors.push('Multi-select questions must have 2-6 options');
-      }
-      if (!Array.isArray(question.correctAnswer) || question.correctAnswer.length === 0) {
-        errors.push('Multi-select correct answer must be a non-empty array');
-      }
-      break;
-
-    case QuestionType.SHORT_ANSWER:
-      if (question.options && question.options.length > 0) {
-        errors.push('Short answer questions should not have options');
-      }
-      if (typeof question.correctAnswer !== 'string') {
-        errors.push('Short answer correct answer must be a string');
-      }
-      break;
-
-    default:
-      errors.push('Invalid question type');
+      return {
+        ...question,
+        options: shuffleArray(question.options),
+      };
+    });
   }
 
-  return { valid: errors.length === 0, errors };
+  return quizObject as IQuiz;
 };
 
 /**
@@ -114,6 +122,8 @@ export const createQuiz = async (
     duration: number;
     passingScore: number;
     maxAttempts: number;
+    shuffleQuestions?: boolean;
+    shuffleOptions?: boolean;
     isPublished?: boolean;
   },
   instructorId: string
@@ -143,8 +153,10 @@ export const createQuiz = async (
     throw new Error('Quiz must have at least 1 question');
   }
 
-  for (let i = 0; i < quizData.questions.length; i++) {
-    const question = quizData.questions[i];
+  const normalizedQuestions = quizData.questions.map(normalizeQuizQuestion);
+
+  for (let i = 0; i < normalizedQuestions.length; i++) {
+    const question = normalizedQuestions[i];
     if (!question) continue;
     const validation = validateQuestion(question);
     if (!validation.valid) {
@@ -152,16 +164,20 @@ export const createQuiz = async (
     }
   }
 
+  await ensureLinkedQuestionBankItemsExist(quizData.courseId, normalizedQuestions);
+
   // Create quiz
   const quiz = await Quiz.create({
     courseId: quizData.courseId,
     moduleId: quizData.moduleId,
     title: quizData.title,
     description: quizData.description,
-    questions: quizData.questions,
+    questions: normalizedQuestions,
     duration: quizData.duration,
     passingScore: quizData.passingScore,
     maxAttempts: quizData.maxAttempts,
+    shuffleQuestions: quizData.shuffleQuestions ?? false,
+    shuffleOptions: quizData.shuffleOptions ?? false,
     isPublished: quizData.isPublished ?? false,
   });
 
@@ -203,6 +219,8 @@ export const updateQuiz = async (
     duration: number;
     passingScore: number;
     maxAttempts: number;
+    shuffleQuestions: boolean;
+    shuffleOptions: boolean;
     isPublished: boolean;
   }>,
   instructorId: string
@@ -228,14 +246,19 @@ export const updateQuiz = async (
       throw new Error('Quiz must have at least 1 question');
     }
 
-    for (let i = 0; i < updates.questions.length; i++) {
-      const question = updates.questions[i];
+    const normalizedQuestions = updates.questions.map(normalizeQuizQuestion);
+
+    for (let i = 0; i < normalizedQuestions.length; i++) {
+      const question = normalizedQuestions[i];
       if (!question) continue;
       const validation = validateQuestion(question);
       if (!validation.valid) {
         throw new Error(`Question ${i + 1}: ${validation.errors.join(', ')}`);
       }
     }
+
+    await ensureLinkedQuestionBankItemsExist(quiz.courseId.toString(), normalizedQuestions);
+    updates.questions = normalizedQuestions;
   }
 
   // Update quiz
@@ -292,7 +315,7 @@ export const getQuiz = async (quizId: string, includeAnswers: boolean = false): 
   const cacheKey = includeAnswers ? `quiz:${quizId}:full` : `quiz:${quizId}:public`;
   const cached = await getCache<IQuiz>(cacheKey);
   if (cached) {
-    return cached;
+    return includeAnswers ? cached : buildStudentQuizView(cached);
   }
 
   const quiz = await Quiz.findById(quizId).populate('courseId', 'title instructorId');
@@ -311,7 +334,7 @@ export const getQuiz = async (quizId: string, includeAnswers: boolean = false): 
   }
 
   await setCache(cacheKey, quizObj, CACHE_TTL);
-  return quizObj as IQuiz;
+  return includeAnswers ? (quizObj as IQuiz) : buildStudentQuizView(quizObj);
 };
 
 /**
@@ -338,13 +361,16 @@ export const addQuestion = async (
   }
 
   // Validate question
-  const validation = validateQuestion(question);
+  const normalizedQuestion = normalizeQuizQuestion(question);
+  const validation = validateQuestion(normalizedQuestion);
   if (!validation.valid) {
     throw new Error(validation.errors.join(', '));
   }
 
+  await ensureLinkedQuestionBankItemsExist(quiz.courseId.toString(), [normalizedQuestion]);
+
   // Add question
-  quiz.questions.push(question as IQuestion);
+  quiz.questions.push(normalizedQuestion as IQuestion);
   await quiz.save();
 
   // Invalidate caches
@@ -354,7 +380,9 @@ export const addQuestion = async (
   return quiz;
 };
 
-type QuestionUpdate = Partial<Pick<IQuestion, 'type' | 'text' | 'options' | 'correctAnswer' | 'points' | 'explanation'>>;
+type QuestionUpdate = Partial<
+  Pick<IQuestion, 'type' | 'text' | 'options' | 'correctAnswer' | 'points' | 'explanation' | 'questionBankItemId'>
+>;
 
 /**
  * Update a question by question ID
@@ -391,22 +419,33 @@ export const updateQuestion = async (
   if (updates.correctAnswer !== undefined) allowedUpdates.correctAnswer = updates.correctAnswer;
   if (updates.points !== undefined) allowedUpdates.points = updates.points;
   if (updates.explanation !== undefined) allowedUpdates.explanation = updates.explanation;
+  if ((updates as any).questionBankItemId !== undefined) {
+    allowedUpdates.questionBankItemId = (updates as any).questionBankItemId;
+  }
 
-  const merged: Partial<IQuestion> = {
+  const merged: Partial<IQuestion> = normalizeQuizQuestion({
     type: allowedUpdates.type ?? existingQuestion.type,
     text: allowedUpdates.text ?? existingQuestion.text,
     options: allowedUpdates.options ?? existingQuestion.options,
     correctAnswer: allowedUpdates.correctAnswer ?? existingQuestion.correctAnswer,
     points: allowedUpdates.points ?? existingQuestion.points,
     explanation: allowedUpdates.explanation ?? existingQuestion.explanation,
-  };
+    questionBankItemId: (updates as any).questionBankItemId ?? (existingQuestion as any).questionBankItemId,
+  });
 
   const validation = validateQuestion(merged);
   if (!validation.valid) {
     throw new Error(validation.errors.join(', '));
   }
 
+  await ensureLinkedQuestionBankItemsExist(quiz.courseId.toString(), [merged]);
+
   Object.assign(existingQuestion as any, allowedUpdates);
+  if ((merged as any).questionBankItemId) {
+    (existingQuestion as any).questionBankItemId = (merged as any).questionBankItemId;
+  } else {
+    (existingQuestion as any).questionBankItemId = undefined;
+  }
   await quiz.save();
 
   // Invalidate caches

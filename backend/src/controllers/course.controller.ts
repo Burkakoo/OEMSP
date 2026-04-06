@@ -7,6 +7,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { courseService, CreateCourseDTO, UpdateCourseDTO, CourseFilters, PaginationParams } from '../services/course.service';
 import { UserRole } from '../models/User';
+import { CourseReviewStatus } from '../models/Course';
 
 /**
  * List courses with filters and pagination
@@ -27,6 +28,7 @@ export const listCourses = async (req: AuthRequest, res: Response): Promise<void
       category: req.query.category as string,
       level: req.query.level as any,
       isPublished: req.query.isPublished === 'true' ? true : req.query.isPublished === 'false' ? false : undefined,
+      reviewStatus: req.query.reviewStatus as CourseReviewStatus,
       instructorId: req.query.instructorId as string,
       searchTerm: req.query.searchTerm as string,
       minPrice: req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined,
@@ -327,6 +329,118 @@ export const deleteCourse = async (req: AuthRequest, res: Response): Promise<voi
   }
 };
 
+export const submitCourseForReview = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const rawCourseId = req.params.id;
+    const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
+    const instructorId = req.user?.userId;
+
+    if (!instructorId) {
+      res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+      return;
+    }
+
+    if (!courseId) {
+      res.status(400).json({
+        success: false,
+        error: 'Course ID is required',
+      });
+      return;
+    }
+
+    const course = await courseService.submitCourseForReview(courseId, instructorId);
+
+    res.status(200).json({
+      success: true,
+      course,
+      message: 'Course submitted for review',
+    });
+  } catch (error) {
+    console.error('Submit course for review controller error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    const statusCode =
+      errorMessage.includes('not found') ? 404 :
+      errorMessage.includes('only submit your own') ? 403 :
+      400;
+
+    res.status(statusCode).json({
+      success: false,
+      error: errorMessage,
+    });
+  }
+};
+
+export const reviewCourse = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawCourseId = req.params.id;
+    const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
+    const adminId = req.user?.userId;
+    const userRole = req.user?.role;
+    const { decision, notes } = req.body;
+
+    if (!adminId || !userRole) {
+      res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+      return;
+    }
+
+    if (userRole !== UserRole.ADMIN) {
+      res.status(403).json({
+        success: false,
+        error: 'Access denied',
+      });
+      return;
+    }
+
+    if (!courseId) {
+      res.status(400).json({
+        success: false,
+        error: 'Course ID is required',
+      });
+      return;
+    }
+
+    if (
+      decision !== CourseReviewStatus.APPROVED &&
+      decision !== CourseReviewStatus.CHANGES_REQUESTED
+    ) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid review decision',
+      });
+      return;
+    }
+
+    const course = await courseService.reviewCourse(courseId, adminId, decision, notes);
+
+    res.status(200).json({
+      success: true,
+      course,
+      message:
+        decision === CourseReviewStatus.APPROVED
+          ? 'Course approved successfully'
+          : 'Changes requested successfully',
+    });
+  } catch (error) {
+    console.error('Review course controller error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    const statusCode = errorMessage.includes('not found') ? 404 : 400;
+
+    res.status(statusCode).json({
+      success: false,
+      error: errorMessage,
+    });
+  }
+};
+
 /**
  * Publish a course
  * POST /api/v1/courses/:id/publish
@@ -377,7 +491,7 @@ export const publishCourse = async (req: AuthRequest, res: Response): Promise<vo
       statusCode = 404;
     } else if (errorMessage.includes('only publish your own')) {
       statusCode = 403;
-    } else if (errorMessage.includes('must have')) {
+    } else if (errorMessage.includes('must have') || errorMessage.includes('must be approved')) {
       statusCode = 400;
     }
 

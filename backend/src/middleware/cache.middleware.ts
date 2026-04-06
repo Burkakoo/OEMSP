@@ -177,7 +177,7 @@ export function cacheMiddleware(options: CacheMiddlewareOptions = {}) {
  * );
  */
 export function invalidateCacheMiddleware(patterns: string[]) {
-  return async (_req: Request, res: Response, next: NextFunction) => {
+  return async (res: Response, next: NextFunction) => {
     // Store original json method
     const originalJson = res.json.bind(res);
 
@@ -228,7 +228,7 @@ export function invalidateCacheMiddleware(patterns: string[]) {
 export function cacheWarmingMiddleware(warmupFn: () => Promise<void>) {
   let warmed = false;
 
-  return async (_req: Request, _res: Response, next: NextFunction) => {
+  return async (next: NextFunction) => {
     if (!warmed) {
       try {
         console.log('🔥 Warming up cache...');
@@ -256,7 +256,7 @@ export function cacheWarmingMiddleware(warmupFn: () => Promise<void>) {
  * app.get('/api/user/profile', noCacheMiddleware(), getUserProfile);
  */
 export function noCacheMiddleware() {
-  return (_req: Request, res: Response, next: NextFunction) => {
+  return (res: Response, next: NextFunction) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -275,7 +275,7 @@ export function noCacheMiddleware() {
  * app.use(cacheStatsMiddleware());
  */
 export function cacheStatsMiddleware() {
-  return async (_req: Request, res: Response, next: NextFunction) => {
+  return async (res: Response, next: NextFunction) => {
     try {
       const { getCacheStats } = await import('../utils/cache.utils');
       const stats = getCacheStats();

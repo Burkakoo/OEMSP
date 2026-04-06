@@ -12,16 +12,21 @@ import {
   Typography,
   CircularProgress,
   Button,
+  Alert,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAppDispatch, useAppSelector } from '@hooks/useAppDispatch';
 import { fetchCourse, clearCurrentCourse } from '@store/slices/courseSlice';
 import { fetchEnrollments } from '@store/slices/enrollmentSlice';
+import AssignmentSubmissionCard from '@components/assignments/AssignmentSubmissionCard';
 import ModuleList from '@components/courses/ModuleList';
 import LessonList from '@components/courses/LessonList';
 import AttachmentList from '@components/courses/AttachmentList';
+import { assignmentService } from '@services/assignment.service';
 import { courseService } from '@services/course.service';
 import { enrollmentService } from '@services/enrollment.service';
+import { AssignmentSubmission } from '@/types/assignment.types';
+import { formatLessonAvailabilityLabel, getLessonAvailability } from '@/utils/lessonAvailability';
 
 type ParsedVideoSource =
   | { type: 'youtube' | 'vimeo'; embedUrl: string }
@@ -119,6 +124,13 @@ const CoursePlayerPage: React.FC = () => {
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [enrollmentId, setEnrollmentId] = useState<string | null>(null);
+  const [enrolledAt, setEnrolledAt] = useState<string | null>(null);
+  const [assignmentSubmission, setAssignmentSubmission] = useState<AssignmentSubmission | null>(null);
+  const [assignmentDraftText, setAssignmentDraftText] = useState('');
+  const [assignmentPendingFiles, setAssignmentPendingFiles] = useState<File[]>([]);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
 
   const [lessonProgressMap, setLessonProgressMap] = useState<Record<string, { completed: boolean; timeSpent: number }>>({});
   const lessonProgressMapRef = useRef<typeof lessonProgressMap>(lessonProgressMap);
@@ -187,9 +199,13 @@ const CoursePlayerPage: React.FC = () => {
         });
         const enrollment = response.data.enrollments[0];
 
-        if (!isMounted || !enrollment) return;
+        if (!isMounted || !enrollment) {
+          setEnrolledAt(null);
+          return;
+        }
 
         setEnrollmentId(enrollment._id);
+        setEnrolledAt(enrollment.enrolledAt);
 
         const progressMap: Record<string, { completed: boolean; timeSpent: number }> = {};
         enrollment.lessonProgress.forEach((progress) => {
@@ -204,6 +220,7 @@ const CoursePlayerPage: React.FC = () => {
 
       } catch (error) {
         console.error('Failed to load enrollment progress:', error);
+        setEnrolledAt(null);
       }
     };
 
@@ -241,6 +258,24 @@ const CoursePlayerPage: React.FC = () => {
     }
   };
 
+  const handleDownloadAssignmentAttachment = async (attachmentId: string, fileName: string) => {
+    if (!assignmentSubmission) return;
+
+    try {
+      const blob = await assignmentService.downloadAttachment(assignmentSubmission._id, attachmentId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setAssignmentError((error as Error).message || 'Failed to download assignment attachment');
+    }
+  };
+
   const handlePlayLesson = (lessonId: string) => {
     setSelectedLessonId(lessonId);
 
@@ -248,6 +283,82 @@ const CoursePlayerPage: React.FC = () => {
     // actual updates will happen via the timer effect below.
     if (!lessonProgressMapRef.current[lessonId]) {
       updateLessonProgressState(lessonId, { completed: false, timeSpent: 0 });
+    }
+  };
+
+  const handleAssignmentFilesSelected = (files: FileList | null) => {
+    if (!files) return;
+
+    setAssignmentPendingFiles((prev) => [...prev, ...Array.from(files)]);
+  };
+
+  const handleRemoveAssignmentFile = (index: number) => {
+    setAssignmentPendingFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index));
+  };
+
+  const handleSubmitAssignment = async () => {
+    const module = currentCourse?.modules.find((item: any) => item._id === selectedModuleId);
+    const lesson = module?.lessons.find((item: any) => item._id === selectedLessonId);
+
+    if (!currentCourse || !module || !lesson) {
+      return;
+    }
+
+    if (getLessonAvailability(lesson, enrolledAt).isLocked) {
+      setAssignmentError('This assignment is not available yet.');
+      return;
+    }
+
+    setAssignmentSubmitting(true);
+    setAssignmentError(null);
+
+    try {
+      const response = await assignmentService.submitAssignment({
+        courseId: currentCourse._id,
+        moduleId: module._id,
+        lessonId: lesson._id,
+        submissionText: assignmentDraftText,
+        attachments: assignmentPendingFiles,
+      });
+
+      setAssignmentSubmission(response.data);
+      setAssignmentDraftText(response.data.submissionText ?? '');
+      setAssignmentPendingFiles([]);
+
+      if (enrollmentId) {
+        const previousProgress = lessonProgressMapRef.current[lesson._id] ?? {
+          completed: false,
+          timeSpent: 0,
+        };
+        const nextTimeSpent = Math.max(previousProgress.timeSpent, (lesson.duration ?? 0) * 60);
+
+        try {
+          const progressResponse = await enrollmentService.updateProgress(enrollmentId, {
+            lessonId: lesson._id,
+            completed: true,
+            timeSpent: nextTimeSpent,
+          });
+
+          const updatedProgress = progressResponse.data.lessonProgress.find(
+            (progress) => progress.lessonId === lesson._id
+          );
+
+          if (updatedProgress) {
+            updateLessonProgressState(lesson._id, {
+              completed: Boolean(updatedProgress.completed),
+              timeSpent: Number(updatedProgress.timeSpent ?? 0),
+            });
+          }
+
+          dispatch(fetchEnrollments());
+        } catch (error) {
+          console.error('Failed to sync assignment completion progress:', error);
+        }
+      }
+    } catch (error) {
+      setAssignmentError((error as Error).message || 'Failed to submit assignment');
+    } finally {
+      setAssignmentSubmitting(false);
     }
   };
 
@@ -320,6 +431,14 @@ const CoursePlayerPage: React.FC = () => {
       return;
     }
 
+    const lesson = currentCourse?.modules
+      .flatMap((module: any) => module.lessons)
+      .find((candidate: any) => candidate._id === selectedLessonId);
+
+    if (lesson && getLessonAvailability(lesson, enrolledAt).isLocked) {
+      return;
+    }
+
     lastTickRef.current = Date.now();
 
     // Flush immediately so that any time spent before the interval tick is recorded.
@@ -342,7 +461,63 @@ const CoursePlayerPage: React.FC = () => {
       // Flush one last time on lesson switch / unmount.
       flushLessonProgress(selectedLessonId, true);
     };
-  }, [selectedLessonId, enrollmentId, flushLessonProgress]);
+  }, [currentCourse, enrolledAt, selectedLessonId, enrollmentId, flushLessonProgress]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadAssignmentSubmission = async () => {
+      const module = currentCourse?.modules.find((item: any) => item._id === selectedModuleId);
+      const lesson = module?.lessons.find((item: any) => item._id === selectedLessonId);
+
+      if (
+        !currentCourse ||
+        !module ||
+        !lesson ||
+        lesson.type !== 'assignment' ||
+        getLessonAvailability(lesson, enrolledAt).isLocked
+      ) {
+        if (active) {
+          setAssignmentSubmission(null);
+          setAssignmentDraftText('');
+          setAssignmentPendingFiles([]);
+          setAssignmentError(null);
+          setAssignmentLoading(false);
+        }
+        return;
+      }
+
+      setAssignmentLoading(true);
+      setAssignmentError(null);
+
+      try {
+        const submission = await assignmentService.getMyAssignmentSubmission(
+          currentCourse._id,
+          lesson._id
+        );
+        if (!active) return;
+        setAssignmentSubmission(submission);
+        setAssignmentDraftText(submission?.submissionText ?? '');
+        setAssignmentPendingFiles([]);
+      } catch (error) {
+        if (!active) return;
+        setAssignmentSubmission(null);
+        setAssignmentDraftText('');
+        setAssignmentPendingFiles([]);
+        setAssignmentError((error as Error).message || 'Failed to load assignment submission');
+      } finally {
+        if (active) {
+          setAssignmentLoading(false);
+        }
+      }
+    };
+
+    loadAssignmentSubmission();
+
+    return () => {
+      active = false;
+    };
+  }, [currentCourse, enrolledAt, selectedLessonId, selectedModuleId]);
 
   if (isLoading) {
     return (
@@ -367,6 +542,10 @@ const CoursePlayerPage: React.FC = () => {
 
   const selectedModule = currentCourse.modules.find((m: any) => m._id === selectedModuleId);
   const selectedLesson = selectedModule?.lessons.find((l: any) => l._id === selectedLessonId);
+  const selectedLessonAvailability = selectedLesson
+    ? getLessonAvailability(selectedLesson, enrolledAt)
+    : { isLocked: false };
+  const isSelectedLessonLocked = Boolean(selectedLessonAvailability.isLocked);
   const parsedVideoSource = selectedLesson?.videoUrl
     ? parseVideoSource(selectedLesson.videoUrl)
     : null;
@@ -407,16 +586,40 @@ const CoursePlayerPage: React.FC = () => {
                 <LessonList
                   lessons={selectedModule.lessons}
                   onPlay={handlePlayLesson}
+                  selectedLessonId={selectedLessonId}
+                  isLessonLocked={(lesson) => getLessonAvailability(lesson, enrolledAt).isLocked}
+                  getLessonStatusLabel={(lesson) => formatLessonAvailabilityLabel(lesson, enrolledAt)}
                 />
               </Paper>
             )}
 
             {selectedLesson && (
               <Paper sx={{ p: 3 }}>
-                <Typography variant="h5" gutterBottom>
-                  {selectedLesson.title}
-                </Typography>
-                {selectedLesson.videoUrl && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="h5">
+                    {selectedLesson.title}
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    onClick={() =>
+                      navigate(
+                        `/courses/${currentCourse._id}/discussions${selectedLessonId ? `?lessonId=${selectedLessonId}` : ''}`
+                      )
+                    }
+                  >
+                    Discuss This Lesson
+                  </Button>
+                </Box>
+                {isSelectedLessonLocked && (
+                  <Alert severity="info" sx={{ mb: 3 }}>
+                    This lesson unlocks on{' '}
+                    {selectedLessonAvailability.availableAt
+                      ? selectedLessonAvailability.availableAt.toLocaleString()
+                      : `day ${selectedLesson.dripDelayDays} after enrollment`}
+                    .
+                  </Alert>
+                )}
+                {!isSelectedLessonLocked && selectedLesson.videoUrl && (
                   <Box sx={{ mb: 3 }}>
                     <Box
                       sx={{
@@ -490,10 +693,12 @@ const CoursePlayerPage: React.FC = () => {
                     </Typography>
                   </Box>
                 )}
-                <Typography variant="body1" paragraph>
-                  {selectedLesson.content}
-                </Typography>
-                {selectedLesson.attachments && selectedLesson.attachments.length > 0 && (
+                {!isSelectedLessonLocked && (
+                  <Typography variant="body1" paragraph>
+                    {selectedLesson.content}
+                  </Typography>
+                )}
+                {!isSelectedLessonLocked && selectedLesson.attachments && selectedLesson.attachments.length > 0 && (
                   <Box sx={{ mt: 3 }}>
                     <Typography variant="h6" gutterBottom>
                       Attachments
@@ -501,6 +706,23 @@ const CoursePlayerPage: React.FC = () => {
                     <AttachmentList
                       attachments={selectedLesson.attachments}
                       onDownload={handleDownloadAttachment}
+                    />
+                  </Box>
+                )}
+                {!isSelectedLessonLocked && selectedLesson.type === 'assignment' && (
+                  <Box sx={{ mt: 3 }}>
+                    <AssignmentSubmissionCard
+                      submission={assignmentSubmission}
+                      draftText={assignmentDraftText}
+                      pendingFiles={assignmentPendingFiles}
+                      isLoading={assignmentLoading}
+                      isSubmitting={assignmentSubmitting}
+                      error={assignmentError}
+                      onTextChange={setAssignmentDraftText}
+                      onFilesSelected={handleAssignmentFilesSelected}
+                      onRemovePendingFile={handleRemoveAssignmentFile}
+                      onSubmit={handleSubmitAssignment}
+                      onDownloadAttachment={handleDownloadAssignmentAttachment}
                     />
                   </Box>
                 )}

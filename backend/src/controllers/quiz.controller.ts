@@ -210,7 +210,18 @@ export const listCourseQuizzes = async (req: AuthRequest, res: Response): Promis
 export const createQuiz = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { courseId } = req.params;
-    const { moduleId, title, description, questions, duration, passingScore, maxAttempts, isPublished } = req.body;
+    const {
+      moduleId,
+      title,
+      description,
+      questions,
+      duration,
+      passingScore,
+      maxAttempts,
+      shuffleQuestions,
+      shuffleOptions,
+      isPublished,
+    } = req.body;
 
     // Validation
     if (!moduleId) {
@@ -280,6 +291,8 @@ export const createQuiz = async (req: AuthRequest, res: Response): Promise<void>
         duration,
         passingScore,
         maxAttempts,
+        shuffleQuestions,
+        shuffleOptions,
         isPublished,
       },
       req.user.userId

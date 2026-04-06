@@ -1,9 +1,11 @@
 import mongoose from 'mongoose';
 import Enrollment, { IEnrollment, ILessonProgress } from '../models/Enrollment';
 import Course from '../models/Course';
+import Certificate from '../models/Certificate';
 import Payment from '../models/Payment';
 import { getCache, setCache, deleteCache, invalidateByPattern } from '../utils/cache.utils';
 import * as certificateService from './certificate.service';
+import { getLessonAvailability } from '../utils/lesson-access.utils';
 
 const CACHE_TTL = 300; // 5 minutes
 
@@ -202,11 +204,12 @@ export const getEnrollment = async (enrollmentId: string): Promise<IEnrollment |
 export const listEnrollments = async (filters: {
   studentId?: string;
   courseId?: string;
+  instructorId?: string;
   isCompleted?: boolean;
   page?: number;
   limit?: number;
 }): Promise<{ enrollments: IEnrollment[]; total: number; page: number; pages: number }> => {
-  const { studentId, courseId, isCompleted, page = 1, limit = 10 } = filters;
+  const { studentId, courseId, instructorId, isCompleted, page = 1, limit = 10 } = filters;
 
   // Build query
   const query: any = {};
@@ -221,6 +224,34 @@ export const listEnrollments = async (filters: {
       throw new Error('Invalid course ID');
     }
     query.courseId = courseId;
+  }
+  if (instructorId) {
+    if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+      throw new Error('Invalid instructor ID');
+    }
+
+    const ownedCourseIds = await Course.find({ instructorId }).distinct('_id');
+    if (courseId) {
+      const normalizedCourseId = String(courseId);
+      const ownsRequestedCourse = ownedCourseIds.some(
+        (ownedCourseId) => String(ownedCourseId) === normalizedCourseId
+      );
+
+      if (!ownsRequestedCourse) {
+        throw new Error('Access denied');
+      }
+    } else {
+      if (ownedCourseIds.length === 0) {
+        return {
+          enrollments: [],
+          total: 0,
+          page,
+          pages: 0,
+        };
+      }
+
+      query.courseId = { $in: ownedCourseIds };
+    }
   }
   if (isCompleted !== undefined) {
     query.isCompleted = isCompleted;
@@ -312,6 +343,26 @@ export const updateProgress = async (
     throw new Error('Enrollment not found');
   }
 
+  const course = await Course.findById(enrollment.courseId).select(
+    'modules.lessons._id modules.lessons.duration modules.lessons.isDripEnabled modules.lessons.dripDelayDays'
+  );
+  if (!course) {
+    throw new Error('Course not found for enrollment');
+  }
+
+  const targetLesson = course.modules
+    .flatMap((module) => module.lessons)
+    .find((lesson) => lesson._id.toString() === lessonId);
+
+  if (!targetLesson) {
+    throw new Error('Lesson not found in course');
+  }
+
+  const availability = getLessonAvailability(targetLesson, enrollment.enrolledAt);
+  if (availability.isLocked) {
+    throw new Error('This lesson is not available yet because it is still on drip release');
+  }
+
   // Find the lesson progress entry
   let lessonProgress = enrollment.progress.find(
     (p) => p.lessonId.toString() === lessonId
@@ -319,11 +370,6 @@ export const updateProgress = async (
 
   // Backfill legacy enrollments where progress array wasn't pre-seeded
   if (!lessonProgress) {
-    const course = await Course.findById(enrollment.courseId).select('modules.lessons._id');
-    if (!course) {
-      throw new Error('Course not found for enrollment');
-    }
-
     const courseLessonIds = course.modules.flatMap((module) =>
       module.lessons.map((lesson) => lesson._id.toString())
     );
@@ -372,15 +418,23 @@ export const updateProgress = async (
   enrollment.completionPercentage = completionPercentage;
 
   // Check if course is completed
-  const justCompleted = completionPercentage === 100 && !enrollment.isCompleted;
-  if (justCompleted) {
-    enrollment.isCompleted = true;
-    enrollment.completedAt = new Date();
+  const wasCompleted = enrollment.isCompleted;
+  const isNowCompleted = completionPercentage === 100;
+
+  if (isNowCompleted) {
+    if (!enrollment.isCompleted) {
+      enrollment.isCompleted = true;
+      enrollment.completedAt = new Date();
+    }
+  } else if (enrollment.isCompleted) {
+    // If progress regressed, mark as incomplete and clear completedAt
+    enrollment.isCompleted = false;
+    enrollment.completedAt = undefined;
   }
 
   await enrollment.save();
 
-  if (justCompleted) {
+  if (isNowCompleted && !wasCompleted) {
     try {
       const certificate = await certificateService.ensureCertificateForEnrollment(
         enrollment._id.toString()
@@ -486,13 +540,40 @@ export const checkCompletion = async (enrollmentId: string): Promise<boolean> =>
   // Check if all lessons are completed
   const allCompleted = enrollment.progress.every((p) => p.completed);
 
-  // Update completion status if needed
-  if (allCompleted && !enrollment.isCompleted) {
-    enrollment.isCompleted = true;
-    enrollment.completedAt = new Date();
-    enrollment.completionPercentage = 100;
-    await enrollment.save();
+  let changed = false;
 
+  if (allCompleted) {
+    if (!enrollment.isCompleted) {
+      enrollment.isCompleted = true;
+      enrollment.completedAt = new Date();
+      changed = true;
+    }
+    if (enrollment.completionPercentage !== 100) {
+      enrollment.completionPercentage = 100;
+      changed = true;
+    }
+  } else if (enrollment.isCompleted) {
+    enrollment.isCompleted = false;
+    enrollment.completedAt = undefined;
+    changed = true;
+
+    const recalculated = Math.round((enrollment.progress.filter((p) => p.completed).length / enrollment.progress.length) * 100 * 100) / 100;
+    if (enrollment.completionPercentage !== recalculated) {
+      enrollment.completionPercentage = recalculated;
+    }
+  } else {
+    const recalculated = Math.round((enrollment.progress.filter((p) => p.completed).length / enrollment.progress.length) * 100 * 100) / 100;
+    if (enrollment.completionPercentage !== recalculated) {
+      enrollment.completionPercentage = recalculated;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await enrollment.save();
+  }
+
+  if (enrollment.isCompleted) {
     try {
       const certificate = await certificateService.ensureCertificateForEnrollment(
         enrollment._id.toString()
@@ -508,11 +589,51 @@ export const checkCompletion = async (enrollmentId: string): Promise<boolean> =>
       console.error('Failed to generate certificate on completion check:', error);
       // Don't throw error here as completion is more important
     }
+  }
 
-    // Invalidate caches
+  if (changed || enrollment.isCompleted) {
     await deleteCache(`enrollment:${enrollmentId}`);
     await invalidateStudentEnrollmentListCache(enrollment.studentId.toString());
   }
 
   return enrollment.isCompleted;
+};
+
+/**
+ * Delete an enrollment and clean up related records.
+ */
+export const deleteEnrollment = async (enrollmentId: string): Promise<void> => {
+  if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
+    throw new Error('Invalid enrollment ID');
+  }
+
+  const enrollment = await Enrollment.findById(enrollmentId);
+  if (!enrollment) {
+    throw new Error('Enrollment not found');
+  }
+
+  const studentId = enrollment.studentId.toString();
+  const courseId = enrollment.courseId.toString();
+  const certificateId = enrollment.certificateId?.toString();
+
+  await Enrollment.findByIdAndDelete(enrollmentId);
+
+  if (certificateId) {
+    await Certificate.findByIdAndDelete(certificateId);
+    await deleteCache(`certificate:${certificateId}`);
+  } else {
+    const certificate = await Certificate.findOneAndDelete({ enrollmentId });
+    if (certificate?._id) {
+      await deleteCache(`certificate:${certificate._id.toString()}`);
+    }
+  }
+
+  await deleteCache(`enrollment:${enrollmentId}`);
+  await invalidateStudentEnrollmentListCache(studentId);
+  await deleteCache(`enrollments:course:${courseId}`);
+  await deleteCache(`certificates:student:${studentId}`);
+
+  await Course.findByIdAndUpdate(courseId, {
+    $inc: { enrollmentCount: -1 },
+  });
 };

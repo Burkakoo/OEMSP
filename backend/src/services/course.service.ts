@@ -7,12 +7,17 @@ import Course, {
   IModule,
   ILesson,
   IAttachment,
+  CourseCurrency,
   CourseLevel,
+  CourseReviewStatus,
+  DiscountType,
   LessonType,
   ALLOWED_FILE_TYPES,
 } from '../models/Course';
 import mongoose from 'mongoose';
 import * as redis from '../config/redis.config';
+import * as platformSettingsService from './platformSettings.service';
+import { getCourseSalePriceQuote } from '../utils/pricing.utils';
 
 // DTOs and Interfaces
 export interface CreateCourseDTO {
@@ -21,6 +26,13 @@ export interface CreateCourseDTO {
   category: string;
   level: CourseLevel;
   price: number;
+  currency?: CourseCurrency;
+  isFree?: boolean;
+  saleEnabled?: boolean;
+  saleType?: DiscountType;
+  saleValue?: number;
+  saleStartsAt?: Date;
+  saleEndsAt?: Date;
   thumbnail?: string;
   prerequisites?: string[];
   learningObjectives?: string[];
@@ -32,6 +44,13 @@ export interface UpdateCourseDTO {
   category?: string;
   level?: CourseLevel;
   price?: number;
+  currency?: CourseCurrency;
+  isFree?: boolean;
+  saleEnabled?: boolean;
+  saleType?: DiscountType;
+  saleValue?: number;
+  saleStartsAt?: Date;
+  saleEndsAt?: Date;
   thumbnail?: string;
   prerequisites?: string[];
   learningObjectives?: string[];
@@ -51,6 +70,8 @@ export interface LessonDTO {
   videoUrl?: string;
   duration: number;
   order: number;
+  isDripEnabled?: boolean;
+  dripDelayDays?: number;
   resources?: Array<{
     title: string;
     url: string;
@@ -70,6 +91,7 @@ export interface CourseFilters {
   category?: string;
   level?: CourseLevel;
   isPublished?: boolean;
+  reviewStatus?: CourseReviewStatus;
   instructorId?: string;
   searchTerm?: string;
   minPrice?: number;
@@ -105,12 +127,25 @@ export interface CourseDTO {
   category: string;
   level: CourseLevel;
   price: number;
+  currency: CourseCurrency;
   isFree: boolean;
+  saleEnabled: boolean;
+  saleType?: DiscountType;
+  saleValue: number;
+  saleStartsAt?: Date;
+  saleEndsAt?: Date;
+  currentPrice: number;
+  hasActiveSale: boolean;
+  saleDiscountAmount: number;
   thumbnail?: string;
   modules: IModule[];
   prerequisites: string[];
   learningObjectives: string[];
   isPublished: boolean;
+  reviewStatus?: CourseReviewStatus;
+  reviewNotes?: string;
+  submittedForReviewAt?: Date;
+  reviewedAt?: Date;
   enrollmentCount: number;
   rating: number;
   reviewCount: number;
@@ -146,6 +181,13 @@ export interface ICourseService {
     instructorId: string;
   }>;
   deleteAttachment(attachmentId: string, instructorId: string): Promise<void>;
+  submitCourseForReview(courseId: string, instructorId: string): Promise<CourseDTO>;
+  reviewCourse(
+    courseId: string,
+    adminId: string,
+    decision: CourseReviewStatus.APPROVED | CourseReviewStatus.CHANGES_REQUESTED,
+    notes?: string
+  ): Promise<CourseDTO>;
   publishCourse(courseId: string, instructorId: string): Promise<CourseDTO>;
   unpublishCourse(courseId: string, instructorId: string): Promise<CourseDTO>;
 }
@@ -157,6 +199,93 @@ class CourseService implements ICourseService {
   private readonly COURSE_CACHE_PREFIX = 'course:';
   private readonly COURSE_LIST_CACHE_PREFIX = 'courses:list:';
   private readonly CACHE_TTL = 300; // 5 minutes
+
+  private normalizeCoursePricing(
+    courseData: CreateCourseDTO | UpdateCourseDTO,
+    existingCourse?: {
+      price: number;
+      currency: CourseCurrency;
+      isFree: boolean;
+      saleEnabled: boolean;
+      saleType?: DiscountType;
+      saleValue: number;
+      saleStartsAt?: Date;
+      saleEndsAt?: Date;
+    }
+  ): CreateCourseDTO | UpdateCourseDTO {
+    const normalizedData: CreateCourseDTO | UpdateCourseDTO = { ...courseData };
+    const nextIsFree = normalizedData.isFree ?? existingCourse?.isFree ?? false;
+    const nextSaleEnabled = normalizedData.saleEnabled ?? existingCourse?.saleEnabled ?? false;
+
+    normalizedData.currency =
+      normalizedData.currency ?? existingCourse?.currency ?? CourseCurrency.ETB;
+    normalizedData.isFree = nextIsFree;
+    normalizedData.saleEnabled = nextSaleEnabled;
+
+    if (nextIsFree) {
+      normalizedData.price = 0;
+      normalizedData.saleEnabled = false;
+      normalizedData.saleType = undefined;
+      normalizedData.saleValue = 0;
+      normalizedData.saleStartsAt = undefined;
+      normalizedData.saleEndsAt = undefined;
+      return normalizedData;
+    }
+
+    if (normalizedData.price === undefined && existingCourse) {
+      normalizedData.price = existingCourse.price;
+    }
+
+    if (!nextSaleEnabled) {
+      normalizedData.saleType = undefined;
+      normalizedData.saleValue = 0;
+      normalizedData.saleStartsAt = undefined;
+      normalizedData.saleEndsAt = undefined;
+      return normalizedData;
+    }
+
+    normalizedData.saleType = normalizedData.saleType ?? existingCourse?.saleType;
+    normalizedData.saleValue = normalizedData.saleValue ?? existingCourse?.saleValue ?? 0;
+    normalizedData.saleStartsAt = normalizedData.saleStartsAt ?? existingCourse?.saleStartsAt;
+    normalizedData.saleEndsAt = normalizedData.saleEndsAt ?? existingCourse?.saleEndsAt;
+
+    if (!normalizedData.saleType) {
+      throw new Error('Sale type is required when sale pricing is enabled');
+    }
+
+    if (normalizedData.saleValue === undefined || normalizedData.saleValue <= 0) {
+      throw new Error('Sale value must be greater than 0 when sale pricing is enabled');
+    }
+
+    if (normalizedData.saleType === DiscountType.PERCENTAGE && normalizedData.saleValue > 100) {
+      throw new Error('Percentage sale value cannot exceed 100');
+    }
+
+    if (
+      normalizedData.saleStartsAt &&
+      normalizedData.saleEndsAt &&
+      new Date(normalizedData.saleStartsAt) > new Date(normalizedData.saleEndsAt)
+    ) {
+      throw new Error('Sale start date must be before sale end date');
+    }
+
+    return normalizedData;
+  }
+
+  private normalizeLessonData(lessonData: LessonDTO): LessonDTO {
+    const normalizedLesson: LessonDTO = { ...lessonData };
+    const isDripEnabled = Boolean(normalizedLesson.isDripEnabled);
+    const dripDelayDays = Number(normalizedLesson.dripDelayDays ?? 0);
+
+    if (dripDelayDays < 0 || Number.isNaN(dripDelayDays)) {
+      throw new Error('Drip delay days cannot be negative');
+    }
+
+    normalizedLesson.isDripEnabled = isDripEnabled;
+    normalizedLesson.dripDelayDays = isDripEnabled ? dripDelayDays : 0;
+
+    return normalizedLesson;
+  }
 
   /**
    * Create a new course
@@ -184,11 +313,18 @@ class CourseService implements ICourseService {
       }
 
       // Create course
+      const normalizedCourseData = this.normalizeCoursePricing(courseData) as CreateCourseDTO;
+
+      const platformSettings = await platformSettingsService.getPlatformSettings();
+      const requireReview = platformSettings.moderation?.requireCourseReviewBeforePublish ?? true;
+      const initialReviewStatus = requireReview ? CourseReviewStatus.DRAFT : CourseReviewStatus.APPROVED;
+
       const course = new Course({
-        ...courseData,
+        ...normalizedCourseData,
         instructorId: new mongoose.Types.ObjectId(instructorId),
         modules: [],
         isPublished: false,
+        reviewStatus: initialReviewStatus,
         enrollmentCount: 0,
         rating: 0,
         reviewCount: 0,
@@ -248,7 +384,18 @@ class CourseService implements ICourseService {
       }
 
       // Update course
-      Object.assign(course, updates);
+      const normalizedUpdates = this.normalizeCoursePricing(updates, {
+        price: course.price,
+        currency: course.currency,
+        isFree: course.isFree,
+        saleEnabled: course.saleEnabled,
+        saleType: course.saleType,
+        saleValue: course.saleValue,
+        saleStartsAt: course.saleStartsAt,
+        saleEndsAt: course.saleEndsAt,
+      });
+
+      Object.assign(course, normalizedUpdates);
       await course.save();
 
       // Invalidate caches
@@ -391,6 +538,10 @@ class CourseService implements ICourseService {
           { title: { $regex: filters.searchTerm, $options: 'i' } },
           { description: { $regex: filters.searchTerm, $options: 'i' } },
         ];
+      }
+
+      if (filters.reviewStatus) {
+        query.reviewStatus = filters.reviewStatus;
       }
 
       if (filters.minPrice !== undefined || filters.maxPrice !== undefined) {
@@ -640,10 +791,12 @@ class CourseService implements ICourseService {
       }
 
       // Create lesson
+      const normalizedLesson = this.normalizeLessonData(lessonData);
+
       const newLesson: any = {
         _id: new mongoose.Types.ObjectId(),
-        ...lessonData,
-        resources: lessonData.resources || [],
+        ...normalizedLesson,
+        resources: normalizedLesson.resources || [],
         attachments: [],
       };
 
@@ -714,7 +867,9 @@ class CourseService implements ICourseService {
         throw new Error('Lesson not found');
       }
 
-      Object.assign(lesson, updates);
+      const normalizedLessonUpdates = this.normalizeLessonData(updates);
+
+      Object.assign(lesson, normalizedLessonUpdates);
       await course.save();
 
       // Invalidate caches
@@ -944,6 +1099,100 @@ class CourseService implements ICourseService {
   }
 
   /**
+   * Submit a course for admin review
+   */
+  async submitCourseForReview(courseId: string, instructorId: string): Promise<CourseDTO> {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+        throw new Error('Invalid instructor ID');
+      }
+
+      const course = await Course.findById(courseId).exec();
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      if (course.instructorId.toString() !== instructorId) {
+        throw new Error('You can only submit your own courses for review');
+      }
+
+      if (course.modules.length === 0) {
+        throw new Error('Course must have at least one module before review');
+      }
+
+      const hasLessons = course.modules.some((module) => module.lessons.length > 0);
+      if (!hasLessons) {
+        throw new Error('Course must have at least one lesson before review');
+      }
+
+      course.reviewStatus = CourseReviewStatus.PENDING_REVIEW;
+      course.submittedForReviewAt = new Date();
+      course.isPublished = false;
+      await course.save();
+
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return this.mapCourseToDTO(course);
+    } catch (error) {
+      console.error('Submit course for review error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Review a submitted course (admin only)
+   */
+  async reviewCourse(
+    courseId: string,
+    adminId: string,
+    decision: CourseReviewStatus.APPROVED | CourseReviewStatus.CHANGES_REQUESTED,
+    notes?: string
+  ): Promise<CourseDTO> {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error('Invalid course ID');
+      }
+      if (!mongoose.Types.ObjectId.isValid(adminId)) {
+        throw new Error('Invalid admin ID');
+      }
+      if (
+        decision !== CourseReviewStatus.APPROVED &&
+        decision !== CourseReviewStatus.CHANGES_REQUESTED
+      ) {
+        throw new Error('Invalid review decision');
+      }
+
+      const course = await Course.findById(courseId).exec();
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      course.reviewStatus = decision;
+      course.reviewNotes = notes?.trim() || undefined;
+      course.reviewedAt = new Date();
+      course.reviewedBy = new mongoose.Types.ObjectId(adminId);
+
+      if (decision === CourseReviewStatus.CHANGES_REQUESTED) {
+        course.isPublished = false;
+      }
+
+      await course.save();
+
+      await this.invalidateCourseCache(courseId);
+      await this.invalidateCourseListCache();
+
+      return this.mapCourseToDTO(course);
+    } catch (error) {
+      console.error('Review course error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Publish a course
    * 
    * Requirements:
@@ -979,6 +1228,13 @@ class CourseService implements ICourseService {
       const hasLessons = course.modules.some(module => module.lessons.length > 0);
       if (!hasLessons) {
         throw new Error('Course must have at least one lesson before publishing');
+      }
+
+      const platformSettings = await platformSettingsService.getPlatformSettings();
+      const requireReview = platformSettings.moderation?.requireCourseReviewBeforePublish ?? true;
+
+      if (requireReview && course.reviewStatus && course.reviewStatus !== CourseReviewStatus.APPROVED) {
+        throw new Error('Course must be approved before publishing');
       }
 
       // Publish course
@@ -1043,6 +1299,7 @@ class CourseService implements ICourseService {
    * @private
    */
   private mapCourseToDTO(course: any): CourseDTO {
+    const pricingQuote = getCourseSalePriceQuote(course);
     const rawInstructor = course?.instructorId;
     const instructorObject =
       rawInstructor && typeof rawInstructor === 'object' && (rawInstructor._id || rawInstructor.id);
@@ -1070,12 +1327,25 @@ class CourseService implements ICourseService {
       category: course.category,
       level: course.level,
       price: course.price,
+      currency: course.currency,
       isFree: course.isFree,
+      saleEnabled: Boolean(course.saleEnabled),
+      saleType: course.saleType,
+      saleValue: Number(course.saleValue ?? 0),
+      saleStartsAt: course.saleStartsAt,
+      saleEndsAt: course.saleEndsAt,
+      currentPrice: pricingQuote.finalPrice,
+      hasActiveSale: pricingQuote.hasActiveSale,
+      saleDiscountAmount: pricingQuote.saleDiscountAmount,
       thumbnail: course.thumbnail,
       modules: course.modules,
       prerequisites: course.prerequisites,
       learningObjectives: course.learningObjectives,
       isPublished: course.isPublished,
+      reviewStatus: course.reviewStatus,
+      reviewNotes: course.reviewNotes,
+      submittedForReviewAt: course.submittedForReviewAt,
+      reviewedAt: course.reviewedAt,
       enrollmentCount: course.enrollmentCount,
       rating: course.rating,
       reviewCount: course.reviewCount,

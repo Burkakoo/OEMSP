@@ -19,16 +19,19 @@ import {
   Alert,
 } from '@mui/material';
 import { Add as AddIcon } from '@mui/icons-material';
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '../hooks/useAppDispatch';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { fetchInstructorAnalytics } from '../store/slices/analyticsSlice';
+import { logout as logoutAction } from '../store/slices/authSlice';
 import InstructorStats from '../components/instructor/InstructorStats';
 import CourseAnalytics from '../components/instructor/CourseAnalytics';
 import EnrollmentChart from '../components/instructor/EnrollmentChart';
 import RevenueChart from '../components/instructor/RevenueChart';
 import DashboardLayout from '../components/layout/DashboardLayout';
+import { useLocalization } from '@/context/LocalizationContext';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -48,6 +51,7 @@ const InstructorDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const [tabValue, setTabValue] = useState(0);
+  const { t } = useLocalization();
   
   const { instructorData, isLoading, error } = useSelector((state: RootState) => state.analytics);
 
@@ -61,6 +65,11 @@ const InstructorDashboardPage: React.FC = () => {
 
   const handleCreateCourse = () => {
     navigate('/instructor/courses/create');
+  };
+
+  const handleLogout = async () => {
+    await dispatch(logoutAction());
+    navigate('/login');
   };
 
   if (isLoading) {
@@ -104,14 +113,27 @@ const InstructorDashboardPage: React.FC = () => {
     <DashboardLayout>
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h4">Instructor Dashboard</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleCreateCourse}
-        >
-          Create Course
-        </Button>
+        <Typography variant="h4">{t('instructorDashboard')}</Typography>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <Button
+            variant="outlined"
+            color="inherit"
+            startIcon={<LogoutRoundedIcon />}
+            onClick={() => void handleLogout()}
+          >
+            {t('logout')}
+          </Button>
+          <Button variant="outlined" onClick={() => navigate('/instructor/assignments')}>
+            {t('assignments')}
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleCreateCourse}
+          >
+            {t('createCourse')}
+          </Button>
+        </Box>
       </Box>
 
       <Box sx={{ mb: 4 }}>

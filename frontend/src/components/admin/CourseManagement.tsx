@@ -21,6 +21,8 @@ import {
 import {
   Visibility as VisibilityIcon,
   Search as SearchIcon,
+  CheckCircleOutline as ApproveIcon,
+  Cancel as RejectIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -33,14 +35,22 @@ interface Course {
   price: number;
   enrollmentCount: number;
   isPublished: boolean;
+  reviewStatus?: string;
+  reviewNotes?: string;
   createdAt: string;
 }
 
 interface CourseManagementProps {
   courses: Course[];
+  onApproveCourse?: (courseId: string) => Promise<void>;
+  onRejectCourse?: (courseId: string) => Promise<void>;
 }
 
-const CourseManagement: React.FC<CourseManagementProps> = ({ courses }) => {
+const CourseManagement: React.FC<CourseManagementProps> = ({
+  courses,
+  onApproveCourse,
+  onRejectCourse,
+}) => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -97,6 +107,7 @@ const CourseManagement: React.FC<CourseManagementProps> = ({ courses }) => {
               <TableCell>Level</TableCell>
               <TableCell>Price</TableCell>
               <TableCell>Enrollments</TableCell>
+              <TableCell>Review</TableCell>
               <TableCell>Status</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
@@ -104,7 +115,7 @@ const CourseManagement: React.FC<CourseManagementProps> = ({ courses }) => {
           <TableBody>
             {filteredCourses.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} align="center">
+                <TableCell colSpan={9} align="center">
                   <Typography variant="body2" color="text.secondary">
                     No courses found
                   </Typography>
@@ -127,12 +138,61 @@ const CourseManagement: React.FC<CourseManagementProps> = ({ courses }) => {
                   <TableCell>{course.enrollmentCount}</TableCell>
                   <TableCell>
                     <Chip
-                      label={course.isPublished ? 'Published' : 'Draft'}
-                      color={course.isPublished ? 'success' : 'default'}
+                      label={course.reviewStatus?.replace('_', ' ') || 'legacy'}
+                      size="small"
+                      color={
+                        course.reviewStatus === 'approved'
+                          ? 'success'
+                          : course.reviewStatus === 'pending_review'
+                            ? 'warning'
+                            : 'default'
+                      }
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={
+                        course.reviewStatus === 'pending_review'
+                          ? 'Pending Review'
+                          : course.reviewStatus === 'changes_requested'
+                          ? 'Changes Requested'
+                          : course.reviewStatus === 'approved'
+                          ? 'Approved'
+                          : course.isPublished
+                          ? 'Published'
+                          : 'Draft'
+                      }
+                      color={
+                        course.reviewStatus === 'pending_review'
+                          ? 'warning'
+                          : course.reviewStatus === 'changes_requested'
+                          ? 'error'
+                          : course.reviewStatus === 'approved' || course.isPublished
+                          ? 'success'
+                          : 'default'
+                      }
                       size="small"
                     />
                   </TableCell>
                   <TableCell align="right">
+                    {course.reviewStatus === 'pending_review' && onApproveCourse && onRejectCourse && (
+                      <>
+                        <IconButton
+                          size="small"
+                          onClick={() => onApproveCourse(course._id)}
+                          title="Approve Course"
+                        >
+                          <ApproveIcon fontSize="small" color="success" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => onRejectCourse(course._id)}
+                          title="Reject Course"
+                        >
+                          <RejectIcon fontSize="small" color="error" />
+                        </IconButton>
+                      </>
+                    )}
                     <IconButton
                       size="small"
                       onClick={() => handleViewCourse(course._id)}

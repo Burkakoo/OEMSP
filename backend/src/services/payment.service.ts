@@ -1,12 +1,20 @@
 import mongoose from 'mongoose';
 import Payment, {
+  MOBILE_PAYMENT_METHODS,
+  PurchaseType,
   IPayment,
   PaymentMethod,
   PaymentStatus,
   ETHIOPIAN_MOBILE_PAYMENT_METHODS,
 } from '../models/Payment';
 import Course from '../models/Course';
+import Enrollment from '../models/Enrollment';
+import User from '../models/User';
+import { NotificationType } from '../models/Notification';
 import { getCache, setCache, deleteCache } from '../utils/cache.utils';
+import { getCouponByCode, incrementCouponUsage } from './coupon.service';
+import { applyCouponToPriceQuote, getCourseSalePriceQuote, roundCurrencyAmount } from '../utils/pricing.utils';
+import { createTriggeredNotification } from './notification.service';
 
 const CACHE_TTL = 300; // 5 minutes
 
@@ -32,19 +40,90 @@ const generateTransactionId = (): string => {
   return `TXN-${timestamp}-${randomStr}`.toUpperCase();
 };
 
-/**
- * Validate Ethiopian phone number for mobile payments
- */
-const validateEthiopianPhone = (phoneNumber?: string, paymentMethod?: PaymentMethod): void => {
-  if (paymentMethod && ETHIOPIAN_MOBILE_PAYMENT_METHODS.includes(paymentMethod)) {
-    if (!phoneNumber) {
-      throw new Error(`Phone number is required for ${paymentMethod}`);
-    }
+export interface PaymentQuote {
+  courseId: string;
+  courseTitle: string;
+  currency: string;
+  basePrice: number;
+  saleDiscountAmount: number;
+  currentPrice: number;
+  couponDiscountAmount: number;
+  finalPrice: number;
+  hasActiveSale: boolean;
+  appliedCoupon?: {
+    id: string;
+    code: string;
+    discountType: string;
+    discountValue: number;
+  };
+}
 
+const resolvePaymentQuote = async (
+  courseId: string,
+  couponCode?: string
+): Promise<{
+  course: any;
+  quote: PaymentQuote;
+}> => {
+  const course = await Course.findById(courseId).select(
+    'title price currency isFree isPublished saleEnabled saleType saleValue saleStartsAt saleEndsAt'
+  );
+
+  if (!course) {
+    throw new Error('Course not found');
+  }
+
+  if (!course.isPublished) {
+    throw new Error('Cannot purchase an unpublished course');
+  }
+
+  const saleQuote = getCourseSalePriceQuote(course);
+  const coupon = couponCode ? await getCouponByCode(courseId, couponCode) : null;
+  const finalQuote = coupon
+    ? applyCouponToPriceQuote({ _id: course._id } as any, saleQuote, coupon)
+    : saleQuote;
+
+  return {
+    course,
+    quote: {
+      courseId: course._id.toString(),
+      courseTitle: course.title,
+      currency: course.currency,
+      basePrice: finalQuote.basePrice,
+      saleDiscountAmount: finalQuote.saleDiscountAmount,
+      currentPrice: finalQuote.currentPrice,
+      couponDiscountAmount: finalQuote.couponDiscountAmount,
+      finalPrice: finalQuote.finalPrice,
+      hasActiveSale: finalQuote.hasActiveSale,
+      appliedCoupon: finalQuote.appliedCoupon,
+    },
+  };
+};
+
+/**
+ * Validate phone number for mobile-money payments
+ */
+const validateMobileMoneyPhone = (phoneNumber?: string, paymentMethod?: PaymentMethod): void => {
+  if (!paymentMethod || !MOBILE_PAYMENT_METHODS.includes(paymentMethod)) {
+    return;
+  }
+
+  if (!phoneNumber) {
+    throw new Error(`Phone number is required for ${paymentMethod}`);
+  }
+
+  if (ETHIOPIAN_MOBILE_PAYMENT_METHODS.includes(paymentMethod)) {
     const validation = Payment.validateEthiopianPhoneNumber(phoneNumber);
     if (!validation.valid) {
       throw new Error(validation.error || 'Invalid phone number');
     }
+    return;
+  }
+
+  if (!/^\+[1-9]\d{7,14}$/.test(phoneNumber)) {
+    throw new Error(
+      'Invalid phone number format. Use an international number like +254700000000'
+    );
   }
 };
 
@@ -65,6 +144,22 @@ const processStripePayment = async (
   console.log('Processing Stripe payment:', { amount, currency, metadata });
 
   // Simulate payment processing
+  return {
+    success: true,
+    transactionId: generateTransactionId(),
+  };
+};
+
+/**
+ * Process PayPal payment (placeholder)
+ */
+const processPayPalPayment = async (
+  amount: number,
+  currency: string,
+  metadata: any
+): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+  console.log('Processing PayPal payment:', { amount, currency, metadata });
+
   return {
     success: true,
     transactionId: generateTransactionId(),
@@ -110,6 +205,23 @@ const processCBEBirrPayment = async (
 };
 
 /**
+ * Process generic mobile-money payment (placeholder)
+ */
+const processGenericMobileMoneyPayment = async (
+  amount: number,
+  phoneNumber: string,
+  provider: PaymentMethod,
+  metadata: any
+): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+  console.log(`Processing ${provider} payment:`, { amount, phoneNumber, metadata });
+
+  return {
+    success: true,
+    transactionId: generateTransactionId(),
+  };
+};
+
+/**
  * Process bank payment (CBE, Awash, Siinqee) (placeholder)
  * TODO: Implement actual bank API integrations
  */
@@ -138,10 +250,19 @@ const routePayment = async (
   metadata?: any
 ): Promise<{ success: boolean; transactionId: string; error?: string }> => {
   switch (paymentMethod) {
+    case PaymentMethod.COUPON:
+      return {
+        success: true,
+        transactionId: generateTransactionId(),
+      };
+
     case PaymentMethod.STRIPE:
     case PaymentMethod.CREDIT_CARD:
     case PaymentMethod.DEBIT_CARD:
       return processStripePayment(amount, currency, metadata);
+
+    case PaymentMethod.PAYPAL:
+      return processPayPalPayment(amount, currency, metadata);
 
     case PaymentMethod.TELEBIRR:
       if (!phoneNumber) throw new Error('Phone number required for Telebirr');
@@ -150,6 +271,19 @@ const routePayment = async (
     case PaymentMethod.CBE_BIRR:
       if (!phoneNumber) throw new Error('Phone number required for CBE Birr');
       return processCBEBirrPayment(amount, phoneNumber, metadata);
+
+    case PaymentMethod.MOBILE_MONEY:
+    case PaymentMethod.MPESA:
+    case PaymentMethod.MTN_MOMO:
+    case PaymentMethod.AIRTEL_MONEY:
+    case PaymentMethod.ORANGE_MONEY:
+      if (!phoneNumber) throw new Error(`Phone number required for ${paymentMethod}`);
+      return processGenericMobileMoneyPayment(
+        amount,
+        phoneNumber,
+        paymentMethod,
+        metadata
+      );
 
     case PaymentMethod.CBE:
     case PaymentMethod.AWASH_BANK:
@@ -169,7 +303,8 @@ export const processPayment = async (paymentData: {
   courseId: string;
   amount: number;
   currency: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod?: PaymentMethod;
+  couponCode?: string;
   phoneNumber?: string;
   ipAddress: string;
   userAgent: string;
@@ -182,24 +317,36 @@ export const processPayment = async (paymentData: {
     throw new Error('Invalid course ID');
   }
 
-  // Validate course exists
-  const course = await Course.findById(paymentData.courseId);
-  if (!course) {
-    throw new Error('Course not found');
+  const existingEnrollment = await Enrollment.findOne({
+    studentId: paymentData.userId,
+    courseId: paymentData.courseId,
+  }).select('_id');
+
+  if (existingEnrollment) {
+    throw new Error('User is already enrolled in this course');
   }
 
-  // Validate amount matches course price
-  if (paymentData.amount !== course.price) {
-    throw new Error('Payment amount does not match course price');
+  const { course, quote } = await resolvePaymentQuote(paymentData.courseId, paymentData.couponCode);
+  const normalizedAmount = roundCurrencyAmount(paymentData.amount);
+  const expectedAmount = roundCurrencyAmount(quote.finalPrice);
+
+  if (normalizedAmount !== expectedAmount) {
+    throw new Error('Payment amount does not match the quoted course price');
   }
 
-  // Validate currency
-  if (paymentData.currency !== 'USD' && paymentData.currency !== 'EUR' && paymentData.currency !== 'ETB') {
-    throw new Error('Unsupported currency');
+  const normalizedCurrency = String(paymentData.currency).toUpperCase();
+  if (normalizedCurrency !== course.currency) {
+    throw new Error('Payment currency does not match course currency');
   }
 
-  // Validate phone number for Ethiopian mobile payments
-  validateEthiopianPhone(paymentData.phoneNumber, paymentData.paymentMethod);
+  const normalizedPaymentMethod =
+    expectedAmount === 0 ? PaymentMethod.COUPON : paymentData.paymentMethod;
+  if (!normalizedPaymentMethod) {
+    throw new Error('Payment method is required');
+  }
+
+  // Validate phone number for mobile-money payments
+  validateMobileMoneyPhone(paymentData.phoneNumber, normalizedPaymentMethod);
 
   // Check for duplicate payment
   const existingPayment = await Payment.findOne({
@@ -214,11 +361,17 @@ export const processPayment = async (paymentData: {
 
   // Process payment through gateway
   const paymentResult = await routePayment(
-    paymentData.amount,
-    paymentData.currency,
-    paymentData.paymentMethod,
+    expectedAmount,
+    normalizedCurrency,
+    normalizedPaymentMethod,
     paymentData.phoneNumber,
-    { userId: paymentData.userId, courseId: paymentData.courseId }
+    {
+      userId: paymentData.userId,
+      courseId: paymentData.courseId,
+      couponCode: quote.appliedCoupon?.code,
+      originalAmount: quote.basePrice,
+      discountAmount: quote.saleDiscountAmount + quote.couponDiscountAmount,
+    }
   );
 
   if (!paymentResult.success) {
@@ -226,9 +379,15 @@ export const processPayment = async (paymentData: {
     await Payment.create({
       userId: paymentData.userId,
       courseId: paymentData.courseId,
-      amount: paymentData.amount,
-      currency: paymentData.currency,
-      paymentMethod: paymentData.paymentMethod,
+      amount: expectedAmount,
+      originalAmount: quote.basePrice,
+      discountAmount: roundCurrencyAmount(
+        quote.saleDiscountAmount + quote.couponDiscountAmount
+      ),
+      couponCode: quote.appliedCoupon?.code,
+      currency: normalizedCurrency,
+      purchaseType: PurchaseType.COURSE,
+      paymentMethod: normalizedPaymentMethod,
       status: PaymentStatus.FAILED,
       transactionId: paymentResult.transactionId || generateTransactionId(),
       metadata: {
@@ -239,6 +398,23 @@ export const processPayment = async (paymentData: {
       },
     });
 
+    try {
+      await createTriggeredNotification({
+        userId: paymentData.userId,
+        type: NotificationType.PAYMENT_FAILED,
+        title: 'Payment failed',
+        message: `Your payment for ${quote.courseTitle} could not be completed.`,
+        data: {
+          courseTitle: quote.courseTitle,
+          amount: expectedAmount,
+          currency: normalizedCurrency,
+          reason: paymentResult.error || 'Payment processing failed',
+        },
+      });
+    } catch (notificationError) {
+      console.error('Failed to send payment failure notification:', notificationError);
+    }
+
     throw new Error(paymentResult.error || 'Payment processing failed');
   }
 
@@ -246,9 +422,15 @@ export const processPayment = async (paymentData: {
   const payment = await Payment.create({
     userId: paymentData.userId,
     courseId: paymentData.courseId,
-    amount: paymentData.amount,
-    currency: paymentData.currency,
-    paymentMethod: paymentData.paymentMethod,
+    amount: expectedAmount,
+    originalAmount: quote.basePrice,
+    discountAmount: roundCurrencyAmount(
+      quote.saleDiscountAmount + quote.couponDiscountAmount
+    ),
+    couponCode: quote.appliedCoupon?.code,
+    currency: normalizedCurrency,
+    purchaseType: PurchaseType.COURSE,
+    paymentMethod: normalizedPaymentMethod,
     status: PaymentStatus.COMPLETED,
     transactionId: paymentResult.transactionId,
     completedAt: new Date(),
@@ -264,7 +446,41 @@ export const processPayment = async (paymentData: {
   await deleteCache(`payment:${payment._id}`);
   await deleteCache(`payments:user:${paymentData.userId}`);
 
+  if (quote.appliedCoupon?.id) {
+    await incrementCouponUsage(quote.appliedCoupon.id);
+  }
+
+  try {
+    const user = await User.findById(paymentData.userId).select('firstName lastName');
+    await createTriggeredNotification({
+      userId: paymentData.userId,
+      type: NotificationType.PAYMENT_SUCCESS,
+      title: 'Payment successful',
+      message: `Your payment for ${quote.courseTitle} was completed successfully.`,
+      data: {
+        courseTitle: quote.courseTitle,
+        amount: expectedAmount,
+        currency: normalizedCurrency,
+        studentName: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
+      },
+    });
+  } catch (notificationError) {
+    console.error('Failed to send payment success notification:', notificationError);
+  }
+
   return payment;
+};
+
+export const getPaymentQuote = async (input: {
+  courseId: string;
+  couponCode?: string;
+}): Promise<PaymentQuote> => {
+  if (!mongoose.Types.ObjectId.isValid(input.courseId)) {
+    throw new Error('Invalid course ID');
+  }
+
+  const { quote } = await resolvePaymentQuote(input.courseId, input.couponCode);
+  return quote;
 };
 
 /**
@@ -277,7 +493,7 @@ export const verifyPayment = async (transactionId: string): Promise<IPayment | n
 
   const payment = await Payment.findOne({ transactionId })
     .populate('userId', 'firstName lastName email')
-    .populate('courseId', 'title price');
+    .populate('courseId', 'title price currency');
 
   return payment;
 };
@@ -299,7 +515,7 @@ export const getPayment = async (paymentId: string): Promise<IPayment | null> =>
 
   const payment = await Payment.findById(paymentId)
     .populate('userId', 'firstName lastName email')
-    .populate('courseId', 'title price');
+    .populate('courseId', 'title price currency');
 
   if (payment) {
     await setCache(cacheKey, payment, CACHE_TTL);
@@ -352,7 +568,7 @@ export const listPayments = async (filters: {
   const [payments, total] = await Promise.all([
     Payment.find(query)
       .populate('userId', 'firstName lastName email')
-      .populate('courseId', 'title price')
+      .populate('courseId', 'title price currency')
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 }),
@@ -378,7 +594,11 @@ export const listPayments = async (filters: {
 /**
  * Refund payment (admin only)
  */
-export const refundPayment = async (paymentId: string, adminId: string): Promise<IPayment> => {
+export const refundPayment = async (
+  paymentId: string,
+  adminId: string,
+  reason?: string
+): Promise<IPayment> => {
   if (!mongoose.Types.ObjectId.isValid(paymentId)) {
     throw new Error('Invalid payment ID');
   }
@@ -403,11 +623,31 @@ export const refundPayment = async (paymentId: string, adminId: string): Promise
   // Update payment status
   payment.status = PaymentStatus.REFUNDED;
   payment.refundedAt = new Date();
+  payment.refundReason = reason;
+  payment.refundedBy = new mongoose.Types.ObjectId(adminId);
   await payment.save();
 
   // Invalidate caches
   await deleteCache(`payment:${paymentId}`);
   await deleteCache(`payments:user:${payment.userId}`);
+
+  try {
+    const course = await Course.findById(payment.courseId).select('title');
+    await createTriggeredNotification({
+      userId: payment.userId.toString(),
+      type: NotificationType.PAYMENT_REFUNDED,
+      title: 'Refund processed',
+      message: `A refund has been processed for ${course?.title || 'your purchase'}.`,
+      data: {
+        courseTitle: course?.title,
+        amount: payment.amount,
+        currency: payment.currency,
+        reason,
+      },
+    });
+  } catch (notificationError) {
+    console.error('Failed to send refund notification:', notificationError);
+  }
 
   return payment;
 };

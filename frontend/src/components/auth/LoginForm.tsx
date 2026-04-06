@@ -1,16 +1,13 @@
-/**
- * Login form component
- */
-
 import React, { useState } from 'react';
 import {
-  Box,
-  TextField,
-  Button,
-  Typography,
   Alert,
-  Link,
+  Box,
+  Button,
   CircularProgress,
+  Link,
+  Stack,
+  TextField,
+  Typography,
 } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '@hooks/useAppDispatch';
 import { login, clearError } from '@store/slices/authSlice';
@@ -46,7 +43,7 @@ const LoginForm: React.FC<LoginFormProps> = ({
     if (!formData.email) {
       errors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      errors.email = 'Email is invalid';
+      errors.email = 'Enter a valid email address';
     }
 
     if (!formData.password) {
@@ -59,19 +56,21 @@ const LoginForm: React.FC<LoginFormProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+
     if (validationErrors[name as keyof typeof validationErrors]) {
       setValidationErrors((prev) => ({ ...prev, [name]: undefined }));
     }
+
     if (error) {
       dispatch(clearError());
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
 
     if (!validateForm()) {
       return;
@@ -80,89 +79,94 @@ const LoginForm: React.FC<LoginFormProps> = ({
     try {
       await dispatch(login(formData)).unwrap();
       onSuccess?.();
-    } catch (err) {
-      // Error handled by Redux
+    } catch {
+      // Redux handles the displayed error state.
     }
   };
 
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
-      <Typography variant="h5" component="h1" gutterBottom>
-        Login
-      </Typography>
+      <Stack spacing={2.5}>
+        <Box>
+          <Typography variant="overline" color="primary.main">
+            Sign in
+          </Typography>
+          <Typography variant="h4" sx={{ mt: 0.5, mb: 1 }}>
+            Access your account
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Use your email and password to continue to your dashboard.
+          </Typography>
+        </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+        {error && <Alert severity="error">{error}</Alert>}
 
-      <TextField
-        margin="normal"
-        required
-        fullWidth
-        id="email"
-        label="Email Address"
-        name="email"
-        autoComplete="email"
-        autoFocus
-        value={formData.email}
-        onChange={handleChange}
-        error={!!validationErrors.email}
-        helperText={validationErrors.email}
-        disabled={isLoading}
-      />
+        <TextField
+          required
+          fullWidth
+          id="email"
+          label="Email address"
+          name="email"
+          placeholder="name@example.com"
+          autoComplete="email"
+          autoFocus
+          value={formData.email}
+          onChange={handleChange}
+          error={!!validationErrors.email}
+          helperText={validationErrors.email}
+          disabled={isLoading}
+        />
 
-      <TextField
-        margin="normal"
-        required
-        fullWidth
-        name="password"
-        label="Password"
-        type="password"
-        id="password"
-        autoComplete="current-password"
-        value={formData.password}
-        onChange={handleChange}
-        error={!!validationErrors.password}
-        helperText={validationErrors.password}
-        disabled={isLoading}
-      />
+        <TextField
+          required
+          fullWidth
+          name="password"
+          label="Password"
+          type="password"
+          id="password"
+          placeholder="Enter your password"
+          autoComplete="current-password"
+          value={formData.password}
+          onChange={handleChange}
+          error={!!validationErrors.password}
+          helperText={validationErrors.password}
+          disabled={isLoading}
+        />
 
-      <Button
-        type="submit"
-        fullWidth
-        variant="contained"
-        sx={{ mt: 3, mb: 2 }}
-        disabled={isLoading}
-      >
-        {isLoading ? <CircularProgress size={24} /> : 'Login'}
-      </Button>
+        <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading}>
+          {isLoading ? <CircularProgress size={20} color="inherit" /> : 'Sign in'}
+        </Button>
 
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
-        <Link
-          component="button"
-          variant="body2"
-          onClick={(e) => {
-            e.preventDefault();
-            onForgotPasswordClick?.();
-          }}
-          sx={{ cursor: 'pointer' }}
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          justifyContent="space-between"
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
         >
-          Forgot password?
-        </Link>
-        <Link
-          component="button"
-          variant="body2"
-          onClick={(e) => {
-            e.preventDefault();
-            onRegisterClick?.();
-          }}
-          sx={{ cursor: 'pointer' }}
-        >
-          Don't have an account? Register
-        </Link>
-      </Box>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={(event) => {
+              event.preventDefault();
+              onForgotPasswordClick?.();
+            }}
+            sx={{ cursor: 'pointer' }}
+          >
+            Forgot password?
+          </Link>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={(event) => {
+              event.preventDefault();
+              onRegisterClick?.();
+            }}
+            sx={{ cursor: 'pointer' }}
+          >
+            Need an account? Register
+          </Link>
+        </Stack>
+      </Stack>
     </Box>
   );
 };

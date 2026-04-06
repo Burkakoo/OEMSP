@@ -7,12 +7,16 @@ export interface Certificate {
   enrollmentId: string;
   studentId: string;
   courseId: string;
+  certificateId: string;
   studentName: string;
   courseTitle: string;
   instructorName: string;
   completionDate: string;
   verificationCode: string;
   certificateUrl: string;
+  publicVerificationUrl?: string;
+  templateName?: string;
+  skillsAwarded?: string[];
   issuedAt: string;
 }
 

@@ -4,7 +4,11 @@ import Enrollment from '../models/Enrollment';
 import User from '../models/User';
 import Quiz from '../models/Quiz';
 import QuizResult from '../models/QuizResult';
+import { NotificationType } from '../models/Notification';
 import { getCache, setCache, deleteCache } from '../utils/cache.utils';
+import { getDefaultCertificateTemplate } from './certificateTemplate.service';
+import { createTriggeredNotification } from './notification.service';
+import { getPlatformSettings } from './platformSettings.service';
 
 const CACHE_TTL = 300; // 5 minutes
 
@@ -17,11 +21,17 @@ const CACHE_TTL = 300; // 5 minutes
  * Certificate data required for PDF rendering
  */
 interface CertificatePdfData {
+  certificateId: string;
   studentName: string;
   courseTitle: string;
   instructorName: string;
   completionDate: Date;
   verificationCode: string;
+  organizationName?: string;
+  templateName?: string;
+  accentColor?: string;
+  footerText?: string;
+  skillsAwarded?: string[];
 }
 
 const escapePdfText = (value: string): string =>
@@ -33,6 +43,27 @@ const formatCertificateDate = (value: Date): string =>
     month: 'long',
     day: 'numeric',
   });
+
+const hexToRgb = (hex?: string): { r: number; g: number; b: number } => {
+  const normalized = (hex || '#A66A00').replace('#', '');
+  const expanded =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((char) => `${char}${char}`)
+          .join('')
+      : normalized;
+
+  const r = parseInt(expanded.slice(0, 2), 16) / 255;
+  const g = parseInt(expanded.slice(2, 4), 16) / 255;
+  const b = parseInt(expanded.slice(4, 6), 16) / 255;
+
+  return {
+    r: Number.isFinite(r) ? r : 0.65,
+    g: Number.isFinite(g) ? g : 0.42,
+    b: Number.isFinite(b) ? b : 0,
+  };
+};
 
 const toIdString = (value: unknown): string => {
   if (!value) {
@@ -150,15 +181,30 @@ export const generateCertificatePdf = async (
   certificateData: CertificatePdfData
 ): Promise<Buffer> => {
   const renderedDate = formatCertificateDate(certificateData.completionDate);
+  const accent = hexToRgb(certificateData.accentColor);
+  const renderedSkills =
+    certificateData.skillsAwarded && certificateData.skillsAwarded.length > 0
+      ? certificateData.skillsAwarded.slice(0, 5).join(', ')
+      : 'Course competencies validated';
   const lines = [
-    '/F1 36 Tf 180 500 Td (Certificate of Completion) Tj',
-    '/F2 20 Tf 260 450 Td (This certifies that) Tj',
-    `/F1 30 Tf 160 400 Td (${escapePdfText(certificateData.studentName)}) Tj`,
-    '/F2 20 Tf 215 360 Td (has successfully completed) Tj',
-    `/F1 24 Tf 120 320 Td (${escapePdfText(certificateData.courseTitle)}) Tj`,
-    `/F2 16 Tf 80 250 Td (Instructor: ${escapePdfText(certificateData.instructorName)}) Tj`,
-    `/F2 16 Tf 80 225 Td (Completion Date: ${escapePdfText(renderedDate)}) Tj`,
-    `/F2 14 Tf 80 200 Td (Verification Code: ${escapePdfText(certificateData.verificationCode)}) Tj`,
+    `${accent.r.toFixed(3)} ${accent.g.toFixed(3)} ${accent.b.toFixed(3)} rg`,
+    `/F2 18 Tf 40 540 Td (${escapePdfText(
+      certificateData.organizationName || 'OEMSP Academy'
+    )}) Tj`,
+    '/F1 34 Tf 150 490 Td (Certificate of Achievement) Tj',
+    '/F2 18 Tf 250 450 Td (Awarded to) Tj',
+    `/F1 28 Tf 155 405 Td (${escapePdfText(certificateData.studentName)}) Tj`,
+    '/F2 18 Tf 200 365 Td (for successfully completing) Tj',
+    `/F1 24 Tf 120 330 Td (${escapePdfText(certificateData.courseTitle)}) Tj`,
+    `/F2 15 Tf 80 270 Td (Instructor: ${escapePdfText(certificateData.instructorName)}) Tj`,
+    `/F2 15 Tf 80 245 Td (Completion Date: ${escapePdfText(renderedDate)}) Tj`,
+    `/F2 15 Tf 80 220 Td (Certificate ID: ${escapePdfText(certificateData.certificateId)}) Tj`,
+    `/F2 14 Tf 80 195 Td (Verification Code: ${escapePdfText(certificateData.verificationCode)}) Tj`,
+    `/F2 14 Tf 80 170 Td (Skills Verified: ${escapePdfText(renderedSkills)}) Tj`,
+    `/F2 13 Tf 80 135 Td (${escapePdfText(
+      certificateData.footerText ||
+        `Template: ${certificateData.templateName || 'Standard'}`
+    )}) Tj`,
   ];
 
   const contentStream = `BT\n${lines.join('\n')}\nET`;
@@ -292,17 +338,39 @@ export const generateCertificate = async (enrollmentId: string): Promise<ICertif
   const courseTitle = course.title;
   const instructorName = `${instructor.firstName} ${instructor.lastName}`;
   const completionDate = enrollment.completedAt || new Date();
+  const certificateId = Certificate.generateCertificateId();
 
   // Generate verification code
   const verificationCode = Certificate.generateVerificationCode();
+  const [template, platformSettings] = await Promise.all([
+    getDefaultCertificateTemplate(),
+    getPlatformSettings(),
+  ]);
+  const frontendBaseUrl =
+    platformSettings.certificates.publicVerificationBaseUrl ||
+    process.env.FRONTEND_URL ||
+    process.env.CORS_ORIGIN ||
+    'http://localhost:3000';
+  const skillsAwarded = platformSettings.certificates.includeSkills
+    ? Array.isArray(course.learningObjectives)
+      ? course.learningObjectives.slice(0, 6)
+      : []
+    : [];
+  const publicVerificationUrl = `${frontendBaseUrl.replace(/\/$/, '')}/certificates/${certificateId}/verify`;
 
   // Generate PDF
   const pdfBuffer = await generateCertificatePdf({
+    certificateId,
     studentName,
     courseTitle,
     instructorName,
     completionDate,
     verificationCode,
+    organizationName: template?.organizationName,
+    templateName: template?.name,
+    accentColor: template?.accentColor,
+    footerText: template?.footerText,
+    skillsAwarded,
   });
 
   // Upload to cloud storage
@@ -314,12 +382,17 @@ export const generateCertificate = async (enrollmentId: string): Promise<ICertif
     enrollmentId,
     studentId: student._id,
     courseId: course._id,
+    certificateId,
     studentName,
     courseTitle,
     instructorName,
     completionDate,
     verificationCode,
     certificateUrl,
+    publicVerificationUrl,
+    templateId: template?._id,
+    templateName: template?.name,
+    skillsAwarded,
   });
 
   // Update enrollment with certificate ID
@@ -330,6 +403,22 @@ export const generateCertificate = async (enrollmentId: string): Promise<ICertif
   // Invalidate caches
   await deleteCache(`certificate:${certificate._id}`);
   await deleteCache(`certificates:student:${student._id}`);
+
+  try {
+    await createTriggeredNotification({
+      userId: student._id.toString(),
+      type: NotificationType.CERTIFICATE_ISSUED,
+      title: 'Certificate ready',
+      message: `Your certificate for ${courseTitle} is ready to view and share.`,
+      data: {
+        courseTitle,
+        certificateUrl,
+        publicVerificationUrl,
+      },
+    });
+  } catch (notificationError) {
+    console.error('Failed to send certificate notification:', notificationError);
+  }
 
   return certificate;
 };
@@ -459,11 +548,14 @@ export const regenerateCertificate = async (certificateId: string): Promise<ICer
 
   // Generate new PDF with existing data
   const pdfBuffer = await generateCertificatePdf({
+    certificateId: certificate.certificateId,
     studentName: certificate.studentName,
     courseTitle: certificate.courseTitle,
     instructorName: certificate.instructorName,
     completionDate: certificate.completionDate,
     verificationCode: certificate.verificationCode,
+    templateName: certificate.templateName,
+    skillsAwarded: certificate.skillsAwarded,
   });
 
   // Upload to cloud storage with new filename
@@ -479,4 +571,17 @@ export const regenerateCertificate = async (certificateId: string): Promise<ICer
   await deleteCache(`certificates:student:${toIdString(certificate.studentId)}`);
 
   return certificate;
+};
+
+export const getPublicCertificate = async (
+  certificateId: string
+): Promise<ICertificate | null> => {
+  if (!certificateId || !/^CERT-[A-Z0-9]{10}$/i.test(certificateId)) {
+    throw new Error('Invalid certificate ID format');
+  }
+
+  return Certificate.findOne({ certificateId: certificateId.toUpperCase() })
+    .populate('studentId', 'firstName lastName')
+    .populate('courseId', 'title')
+    .populate('templateId', 'name organizationName accentColor footerText');
 };

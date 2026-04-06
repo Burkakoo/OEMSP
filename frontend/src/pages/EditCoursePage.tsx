@@ -20,10 +20,12 @@ import {
   DialogActions,
   TextField,
   FormControl,
+  FormControlLabel,
   InputLabel,
   Select,
   MenuItem,
   Chip,
+  Switch,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -32,6 +34,7 @@ import { fetchCourse, updateCourse, publishCourse, unpublishCourse, clearCurrent
 import CourseForm from '@components/courses/CourseForm';
 import ModuleList from '@components/courses/ModuleList';
 import LessonList from '@components/courses/LessonList';
+import CourseCouponsManager from '@components/courses/CourseCouponsManager';
 import { courseService } from '@services/course.service';
 import { CreateLessonData, CreateModuleData, LessonType, UpdateCourseData } from '@/types/course.types';
 
@@ -64,6 +67,8 @@ const EditCoursePage: React.FC = () => {
     videoUrl: '',
     duration: 10,
     order: 1,
+    isDripEnabled: false,
+    dripDelayDays: 0,
   });
   const [lessonErrors, setLessonErrors] = React.useState<Record<string, string>>({});
   const [uploadLessonId, setUploadLessonId] = React.useState<string>('');
@@ -194,6 +199,8 @@ const EditCoursePage: React.FC = () => {
       videoUrl: '',
       duration: 10,
       order: nextOrder,
+      isDripEnabled: false,
+      dripDelayDays: 0,
     });
     setIsAddLessonOpen(true);
   };
@@ -226,6 +233,10 @@ const EditCoursePage: React.FC = () => {
       errs.videoUrl = 'Video URL must start with http:// or https://';
     }
 
+    if (newLesson.isDripEnabled && Number(newLesson.dripDelayDays ?? 0) < 0) {
+      errs.dripDelayDays = 'Drip delay days cannot be negative';
+    }
+
     setLessonErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -247,6 +258,8 @@ const EditCoursePage: React.FC = () => {
         videoUrl: videoUrl.length > 0 ? videoUrl : undefined,
         duration: Number(newLesson.duration),
         order: Number(newLesson.order),
+        isDripEnabled: Boolean(newLesson.isDripEnabled),
+        dripDelayDays: Boolean(newLesson.isDripEnabled) ? Number(newLesson.dripDelayDays ?? 0) : 0,
       };
 
       await courseService.addLesson(currentCourse._id, selectedModuleId, payload);
@@ -268,8 +281,13 @@ const EditCoursePage: React.FC = () => {
     try {
       if (currentCourse.isPublished) {
         await dispatch(unpublishCourse(id)).unwrap();
-      } else {
+      } else if (currentCourse.reviewStatus === 'approved' || !currentCourse.reviewStatus) {
         await dispatch(publishCourse(id)).unwrap();
+      } else if (currentCourse.reviewStatus === 'pending_review') {
+        setPageError('This course is currently awaiting admin review.');
+      } else {
+        await courseService.submitCourseForReview(id);
+        await dispatch(fetchCourse(id)).unwrap();
       }
     } catch (err) {
       const message =
@@ -373,6 +391,9 @@ const EditCoursePage: React.FC = () => {
     if (!editingLesson.title?.trim()) errs.title = 'Title is required';
     if (!editingLesson.description?.trim()) errs.description = 'Description is required';
     if (!editingLesson.content?.trim()) errs.content = 'Content is required';
+    if (editingLesson.isDripEnabled && Number(editingLesson.dripDelayDays ?? 0) < 0) {
+      errs.dripDelayDays = 'Drip delay days cannot be negative';
+    }
     setEditLessonErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
@@ -386,6 +407,8 @@ const EditCoursePage: React.FC = () => {
         videoUrl: editingLesson.videoUrl?.trim() || undefined,
         duration: Number(editingLesson.duration),
         order: Number(editingLesson.order),
+        isDripEnabled: Boolean(editingLesson.isDripEnabled),
+        dripDelayDays: Boolean(editingLesson.isDripEnabled) ? Number(editingLesson.dripDelayDays ?? 0) : 0,
       });
       setEditLessonOpen(false);
       await dispatch(fetchCourse(id)).unwrap();
@@ -483,9 +506,15 @@ const EditCoursePage: React.FC = () => {
             variant={currentCourse.isPublished ? 'outlined' : 'contained'}
             color={currentCourse.isPublished ? 'warning' : 'success'}
             onClick={handleTogglePublish}
-            disabled={isLoading}
+            disabled={isLoading || currentCourse.reviewStatus === 'pending_review'}
           >
-            {currentCourse.isPublished ? 'Unpublish' : 'Publish'}
+            {currentCourse.isPublished
+              ? 'Unpublish'
+              : currentCourse.reviewStatus === 'approved' || !currentCourse.reviewStatus
+                ? 'Publish'
+                : currentCourse.reviewStatus === 'pending_review'
+                  ? 'Awaiting Review'
+                  : 'Submit for Review'}
           </Button>
         </Box>
 
@@ -499,6 +528,7 @@ const EditCoursePage: React.FC = () => {
           <Tabs value={tabValue} onChange={handleTabChange}>
             <Tab label="Course Details" />
             <Tab label="Modules & Lessons" />
+            <Tab label="Coupons" />
           </Tabs>
         </Paper>
 
@@ -581,6 +611,20 @@ const EditCoursePage: React.FC = () => {
                 >
                   Create Quiz
                 </Button>
+                <Button
+                  variant="outlined"
+                  sx={{ mt: 2, ml: 2 }}
+                  onClick={() => navigate(`/instructor/courses/${currentCourse._id}/question-bank`)}
+                >
+                  Question Bank
+                </Button>
+                <Button
+                  variant="outlined"
+                  sx={{ mt: 2, ml: 2 }}
+                  onClick={() => navigate(`/courses/${currentCourse._id}/discussions`)}
+                >
+                  View Discussions
+                </Button>
 
                 {selectedModule && selectedModule.lessons.length > 0 && (
                   <Paper sx={{ p: 2, mt: 2, border: 1, borderColor: 'divider' }}>
@@ -639,6 +683,12 @@ const EditCoursePage: React.FC = () => {
                 )}
               </Box>
             </Box>
+          </Paper>
+        )}
+
+        {tabValue === 2 && (
+          <Paper sx={{ p: 4 }}>
+            <CourseCouponsManager courseId={currentCourse._id} currency={currentCourse.currency} />
           </Paper>
         )}
 
@@ -813,6 +863,43 @@ const EditCoursePage: React.FC = () => {
               helperText={lessonErrors.order}
               disabled={isAddingLesson}
             />
+
+            <FormControlLabel
+              sx={{ mt: 1 }}
+              control={
+                <Switch
+                  checked={Boolean(newLesson.isDripEnabled)}
+                  onChange={(e) =>
+                    setNewLesson((prev) => ({
+                      ...prev,
+                      isDripEnabled: e.target.checked,
+                      dripDelayDays: e.target.checked ? Number(prev.dripDelayDays ?? 0) : 0,
+                    }))
+                  }
+                  disabled={isAddingLesson}
+                />
+              }
+              label="Release this lesson over time"
+            />
+
+            {newLesson.isDripEnabled && (
+              <TextField
+                margin="normal"
+                fullWidth
+                type="number"
+                label="Release after enrollment (days)"
+                value={newLesson.dripDelayDays ?? 0}
+                onChange={(e) => {
+                  setNewLesson((prev) => ({ ...prev, dripDelayDays: Number(e.target.value) }));
+                  if (lessonErrors.dripDelayDays) {
+                    setLessonErrors((prev) => ({ ...prev, dripDelayDays: '' }));
+                  }
+                }}
+                error={!!lessonErrors.dripDelayDays}
+                helperText={lessonErrors.dripDelayDays || 'Students unlock this lesson after the selected number of days.'}
+                disabled={isAddingLesson}
+              />
+            )}
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setIsAddLessonOpen(false)} disabled={isAddingLesson}>
@@ -891,6 +978,31 @@ const EditCoursePage: React.FC = () => {
               value={editingLesson?.order ?? 1}
               onChange={(e) => setEditingLesson((p: any) => ({ ...p, order: Number(e.target.value) }))}
               disabled={isSavingLesson} />
+            <FormControlLabel
+              sx={{ mt: 1 }}
+              control={
+                <Switch
+                  checked={Boolean(editingLesson?.isDripEnabled)}
+                  onChange={(e) =>
+                    setEditingLesson((p: any) => ({
+                      ...p,
+                      isDripEnabled: e.target.checked,
+                      dripDelayDays: e.target.checked ? Number(p?.dripDelayDays ?? 0) : 0,
+                    }))
+                  }
+                  disabled={isSavingLesson}
+                />
+              }
+              label="Release this lesson over time"
+            />
+            {editingLesson?.isDripEnabled && (
+              <TextField margin="normal" fullWidth type="number" label="Release after enrollment (days)"
+                value={editingLesson?.dripDelayDays ?? 0}
+                onChange={(e) => setEditingLesson((p: any) => ({ ...p, dripDelayDays: Number(e.target.value) }))}
+                error={!!editLessonErrors.dripDelayDays}
+                helperText={editLessonErrors.dripDelayDays || 'Students unlock this lesson after the selected number of days.'}
+                disabled={isSavingLesson} />
+            )}
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setEditLessonOpen(false)} disabled={isSavingLesson}>Cancel</Button>

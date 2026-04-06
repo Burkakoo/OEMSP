@@ -17,10 +17,13 @@ import {
 } from '@mui/material';
 import { useAppDispatch } from '@hooks/useAppDispatch';
 import { processPayment } from '@store/slices/paymentSlice';
+import { useLocalization } from '@/context/LocalizationContext';
 
 interface PaymentFormProps {
   courseId: string;
   amount: number;
+  currency: string;
+  couponCode?: string;
   onSuccess: (paymentId: string) => void;
   onError: (error: string) => void;
 }
@@ -28,15 +31,23 @@ interface PaymentFormProps {
 const PaymentForm: React.FC<PaymentFormProps> = ({
   courseId,
   amount,
+  currency,
+  couponCode,
   onSuccess,
   onError,
 }) => {
   const dispatch = useAppDispatch();
+  const { formatCurrency, t } = useLocalization();
   const [paymentMethod, setPaymentMethod] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const ethiopianPaymentMethods = [
+  const paymentMethods = [
+    { value: 'paypal', label: 'PayPal' },
+    { value: 'mobile-money', label: 'Mobile Money' },
+    { value: 'mpesa', label: 'M-Pesa' },
+    { value: 'mtn-momo', label: 'MTN MoMo' },
+    { value: 'airtel-money', label: 'Airtel Money' },
     { value: 'telebirr', label: 'Telebirr' },
     { value: 'cbe-birr', label: 'CBE Birr' },
     { value: 'cbe', label: 'Commercial Bank of Ethiopia' },
@@ -44,17 +55,24 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
     { value: 'siinqee', label: 'Siinqee Bank' },
   ];
 
-  const mobilePaymentMethods = ['telebirr', 'cbe-birr'];
+  const mobilePaymentMethods = [
+    'mobile-money',
+    'mpesa',
+    'mtn-momo',
+    'airtel-money',
+    'telebirr',
+    'cbe-birr',
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!paymentMethod) {
+
+    if (amount > 0 && !paymentMethod) {
       onError('Please select a payment method');
       return;
     }
 
-    if (mobilePaymentMethods.includes(paymentMethod) && !phoneNumber) {
+    if (amount > 0 && mobilePaymentMethods.includes(paymentMethod) && !phoneNumber) {
       onError('Phone number is required for mobile payments');
       return;
     }
@@ -65,9 +83,10 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
       const paymentData = {
         courseId,
         amount,
-        currency: 'ETB',
-        paymentMethod: paymentMethod.replace('-', '_').toLowerCase(), // Convert to backend format
-        phoneNumber: mobilePaymentMethods.includes(paymentMethod) ? phoneNumber : undefined,
+        currency,
+        paymentMethod: amount > 0 ? paymentMethod.replace('-', '_').toLowerCase() : undefined,
+        couponCode,
+        phoneNumber: amount > 0 && mobilePaymentMethods.includes(paymentMethod) ? phoneNumber : undefined,
       };
 
       const result = await dispatch(processPayment(paymentData)).unwrap();
@@ -82,44 +101,55 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
   return (
     <Box component="form" onSubmit={handleSubmit}>
       <Typography variant="h6" gutterBottom>
-        Payment Details
+        {t('paymentDetails')}
       </Typography>
 
       <Typography variant="body1" sx={{ mb: 3 }}>
-        Amount: {amount} ETB
+        {t('amount')}: {formatCurrency(amount, currency)}
       </Typography>
 
-      <FormControl fullWidth margin="normal" required>
-        <InputLabel>Payment Method</InputLabel>
-        <Select
-          value={paymentMethod}
-          onChange={(e) => setPaymentMethod(e.target.value)}
-          label="Payment Method"
-        >
-          {ethiopianPaymentMethods.map((method) => (
-            <MenuItem key={method.value} value={method.value}>
-              {method.label}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+      {amount > 0 && (
+        <FormControl fullWidth margin="normal" required>
+          <InputLabel>{t('paymentMethod')}</InputLabel>
+          <Select
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value)}
+            label={t('paymentMethod')}
+          >
+            {paymentMethods.map((method) => (
+              <MenuItem key={method.value} value={method.value}>
+                {method.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
 
-      {mobilePaymentMethods.includes(paymentMethod) && (
+      {amount > 0 && mobilePaymentMethods.includes(paymentMethod) && (
         <TextField
           fullWidth
-          label="Phone Number"
+          label={t('phoneNumber')}
           value={phoneNumber}
           onChange={(e) => setPhoneNumber(e.target.value)}
-          placeholder="09XXXXXXXX"
+          placeholder="+254700000000"
           required
           margin="normal"
-          helperText="Enter your mobile number for payment"
+          helperText={t('phoneHelper')}
         />
       )}
 
-      {paymentMethod && !mobilePaymentMethods.includes(paymentMethod) && (
+      {amount > 0 && paymentMethod && !mobilePaymentMethods.includes(paymentMethod) && (
         <Alert severity="info" sx={{ mt: 2 }}>
-          You will be redirected to {ethiopianPaymentMethods.find(m => m.value === paymentMethod)?.label} to complete your payment.
+          {t('redirectToPayment', {
+            method:
+              paymentMethods.find((method) => method.value === paymentMethod)?.label || paymentMethod,
+          })}
+        </Alert>
+      )}
+
+      {amount === 0 && (
+        <Alert severity="success" sx={{ mt: 2 }}>
+          {t('couponCoversCourse')}
         </Alert>
       )}
 
@@ -131,7 +161,13 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
         disabled={isProcessing}
         sx={{ mt: 3 }}
       >
-        {isProcessing ? <CircularProgress size={24} /> : `Pay ${amount} ETB`}
+        {isProcessing ? (
+          <CircularProgress size={24} />
+        ) : amount === 0 ? (
+          t('completeEnrollment')
+        ) : (
+          t('payAmount', { amount: formatCurrency(amount, currency) })
+        )}
       </Button>
     </Box>
   );

@@ -24,6 +24,20 @@ router.get('/', authenticate, notificationController.listNotifications);
 router.get('/unread-count', authenticate, notificationController.getUnreadCount);
 
 /**
+ * @route   GET /api/v1/notifications/preferences
+ * @desc    Get current user's notification preferences
+ * @access  Private
+ */
+router.get('/preferences', authenticate, notificationController.getNotificationPreferences);
+
+/**
+ * @route   PUT /api/v1/notifications/preferences
+ * @desc    Update current user's notification preferences
+ * @access  Private
+ */
+router.put('/preferences', authenticate, notificationController.updateNotificationPreferences);
+
+/**
  * @route   PUT /api/v1/notifications/read-all
  * @desc    Mark all notifications as read
  * @access  Private

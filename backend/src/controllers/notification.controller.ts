@@ -194,3 +194,63 @@ export const getUnreadCount = async (req: AuthRequest, res: Response): Promise<v
     });
   }
 };
+
+export const getNotificationPreferences = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+      return;
+    }
+
+    const preferences = await notificationService.getNotificationPreferences(userId);
+
+    res.status(200).json({
+      success: true,
+      data: preferences,
+    });
+  } catch (error: any) {
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to get notification preferences',
+    });
+  }
+};
+
+export const updateNotificationPreferences = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+      return;
+    }
+
+    const preferences = await notificationService.updateNotificationPreferences(
+      userId,
+      req.body || {}
+    );
+
+    res.status(200).json({
+      success: true,
+      data: preferences,
+      message: 'Notification preferences updated successfully',
+    });
+  } catch (error: any) {
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to update notification preferences',
+    });
+  }
+};

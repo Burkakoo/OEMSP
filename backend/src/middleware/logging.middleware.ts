@@ -1,6 +1,7 @@
 import morgan from 'morgan';
 import { Request, Response } from 'express';
 import { env } from '../config/env.config';
+import { createAuditLog } from '../services/auditLog.service';
 
 /**
  * Logging Middleware
@@ -106,38 +107,46 @@ export const auditLog = (
  * Automatically logs certain operations
  */
 export const auditLogMiddleware = (req: Request, res: Response, next: any) => {
-  // Store original send function
-  const originalSend = res.send;
-
-  // Override send function to log after response
-  res.send = function (data: any) {
-    // Only log successful operations that modify data
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      const sensitiveOperations = ['POST', 'PUT', 'DELETE', 'PATCH'];
-
-      if (sensitiveOperations.includes(req.method)) {
-        const userId: string = ((req as any).user?.userId as string) || 'anonymous';
-        const action = `${req.method} ${req.path}`;
-        const pathParts = req.path.split('/');
-        const resource = pathParts[3] || 'unknown'; // Extract resource from path
-
-        // Handle resourceId with proper type safety - ensure it's always a string
-        const paramId = req.params.id;
-        const resourceId: string = Array.isArray(paramId)
-          ? (paramId[0] ?? 'N/A')
-          : (paramId ?? 'N/A');
-
-        auditLog(userId, action, resource, resourceId, {
-          method: req.method,
-          path: req.path,
-          statusCode: res.statusCode,
-        });
-      }
+  res.on('finish', () => {
+    const sensitiveOperations = ['POST', 'PUT', 'DELETE', 'PATCH'];
+    if (!sensitiveOperations.includes(req.method)) {
+      return;
     }
 
-    // Call original send function
-    return originalSend.call(this, data);
-  };
+    const userId = ((req as any).user?.userId as string) || 'anonymous';
+    const action = `${req.method} ${req.path}`;
+    const pathParts = req.path.split('/').filter(Boolean);
+    const resource = pathParts[2] || pathParts[0] || 'unknown';
+    const paramId = req.params.id;
+    const resourceId = Array.isArray(paramId) ? paramId[0] : paramId;
+    const ipAddress =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket.remoteAddress ||
+      undefined;
+    const metadata = {
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+    };
+
+    auditLog(userId || 'anonymous', action, resource, resourceId || 'N/A', metadata);
+
+    void createAuditLog({
+      userId,
+      action,
+      resource,
+      resourceId: resourceId || undefined,
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      success: res.statusCode >= 200 && res.statusCode < 400,
+      ipAddress,
+      userAgent: req.headers['user-agent'],
+      metadata,
+    }).catch((error) => {
+      console.error('Failed to persist audit log:', error);
+    });
+  });
 
   next();
 };

@@ -79,6 +79,7 @@ const CreateQuizPage: React.FC = () => {
           </Box>
         ) : (
           <QuizForm
+            courseId={courseId}
             modules={modules}
             defaultModuleId={defaultModuleId}
             onSubmit={handleSubmit}

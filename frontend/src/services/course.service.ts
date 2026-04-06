@@ -56,10 +56,41 @@ interface AttachmentUploadResponse {
 
 type BackendCourse = any;
 
+const normalizeLesson = (rawLesson: any): Lesson => ({
+  _id: String(rawLesson?._id ?? rawLesson?.id ?? ''),
+  title: rawLesson?.title ?? '',
+  description: rawLesson?.description,
+  type: rawLesson?.type ?? 'text',
+  content: rawLesson?.content ?? '',
+  videoUrl: rawLesson?.videoUrl,
+  duration: Number(rawLesson?.duration ?? 0),
+  order: Number(rawLesson?.order ?? 0),
+  resources: Array.isArray(rawLesson?.resources) ? rawLesson.resources : [],
+  attachments: Array.isArray(rawLesson?.attachments) ? rawLesson.attachments : [],
+  isDripEnabled: Boolean(rawLesson?.isDripEnabled),
+  dripDelayDays: Number(rawLesson?.dripDelayDays ?? 0),
+});
+
+const normalizeModule = (rawModule: any): Module => ({
+  _id: String(rawModule?._id ?? rawModule?.id ?? ''),
+  title: rawModule?.title ?? '',
+  description: rawModule?.description ?? '',
+  order: Number(rawModule?.order ?? 0),
+  lessons: Array.isArray(rawModule?.lessons)
+    ? rawModule.lessons
+        .map(normalizeLesson)
+        .sort((a: Lesson, b: Lesson) => a.order - b.order)
+    : [],
+});
+
 const normalizeCourse = (raw: BackendCourse): Course => {
   const id = String(raw?._id ?? raw?.id ?? '');
 
-  const modules = Array.isArray(raw?.modules) ? raw.modules : [];
+  const modules = Array.isArray(raw?.modules)
+    ? raw.modules
+        .map(normalizeModule)
+        .sort((a: Module, b: Module) => a.order - b.order)
+    : [];
 
   const instructorId = String(raw?.instructorId?._id ?? raw?.instructorId?.id ?? raw?.instructorId ?? '');
 
@@ -85,11 +116,26 @@ const normalizeCourse = (raw: BackendCourse): Course => {
     level: raw?.level ?? 'beginner',
     price: Number(raw?.price ?? 0),
     currency: raw?.currency ?? 'ETB',
+    isFree: Boolean(raw?.isFree),
+    saleEnabled: Boolean(raw?.saleEnabled),
+    saleType: raw?.saleType,
+    saleValue: Number(raw?.saleValue ?? 0),
+    saleStartsAt: raw?.saleStartsAt ? String(raw.saleStartsAt) : undefined,
+    saleEndsAt: raw?.saleEndsAt ? String(raw.saleEndsAt) : undefined,
+    currentPrice: Number(raw?.currentPrice ?? raw?.price ?? 0),
+    hasActiveSale: Boolean(raw?.hasActiveSale),
+    saleDiscountAmount: Number(raw?.saleDiscountAmount ?? 0),
     thumbnail: raw?.thumbnail,
     isPublished: Boolean(raw?.isPublished),
     modules,
     enrollmentCount: Number(raw?.enrollmentCount ?? 0),
+    prerequisites: Array.isArray(raw?.prerequisites) ? raw.prerequisites : [],
+    learningObjectives: Array.isArray(raw?.learningObjectives) ? raw.learningObjectives : [],
     rating: raw?.rating ?? 0,
+    reviewStatus: raw?.reviewStatus,
+    reviewNotes: raw?.reviewNotes,
+    submittedForReviewAt: raw?.submittedForReviewAt ? String(raw.submittedForReviewAt) : undefined,
+    reviewedAt: raw?.reviewedAt ? String(raw.reviewedAt) : undefined,
     createdAt: raw?.createdAt ? String(raw.createdAt) : new Date().toISOString(),
     updatedAt: raw?.updatedAt ? String(raw.updatedAt) : new Date().toISOString(),
   };
@@ -106,6 +152,32 @@ const sanitizeCoursePayload = (payload: any): any => {
     const t = cleaned.thumbnail.trim();
     if (t.length === 0) delete cleaned.thumbnail;
     else cleaned.thumbnail = t;
+  }
+
+  cleaned.currency = cleaned.currency || 'ETB';
+
+  if (cleaned.isFree) {
+    cleaned.price = 0;
+    cleaned.saleEnabled = false;
+    delete cleaned.saleType;
+    delete cleaned.saleValue;
+    delete cleaned.saleStartsAt;
+    delete cleaned.saleEndsAt;
+  } else if (!cleaned.saleEnabled) {
+    delete cleaned.saleType;
+    delete cleaned.saleValue;
+    delete cleaned.saleStartsAt;
+    delete cleaned.saleEndsAt;
+  } else {
+    if (cleaned.saleValue !== undefined) {
+      cleaned.saleValue = Number(cleaned.saleValue);
+    }
+    if (typeof cleaned.saleStartsAt === 'string' && cleaned.saleStartsAt.trim().length === 0) {
+      delete cleaned.saleStartsAt;
+    }
+    if (typeof cleaned.saleEndsAt === 'string' && cleaned.saleEndsAt.trim().length === 0) {
+      delete cleaned.saleEndsAt;
+    }
   }
 
   return cleaned;
@@ -131,6 +203,7 @@ export const courseService = {
     if (filters.maxPrice) params.append('maxPrice', filters.maxPrice.toString());
     if (filters.search) params.append('searchTerm', filters.search);
     if (filters.instructorId) params.append('instructorId', filters.instructorId);
+    if (filters.reviewStatus) params.append('reviewStatus', filters.reviewStatus);
 
     const response = await apiRequest<any>(`/courses?${params.toString()}`);
 
@@ -196,6 +269,35 @@ export const courseService = {
   publishCourse: async (id: string): Promise<CourseResponse> => {
     const response = await apiRequest<any>(`/courses/${id}/publish`, {
       method: 'POST',
+    });
+
+    const rawCourse = response?.course ?? response?.data ?? response;
+    return {
+      success: Boolean(response?.success),
+      data: normalizeCourse(rawCourse),
+    };
+  },
+
+  submitCourseForReview: async (id: string): Promise<CourseResponse> => {
+    const response = await apiRequest<any>(`/courses/${id}/submit-review`, {
+      method: 'POST',
+    });
+
+    const rawCourse = response?.course ?? response?.data ?? response;
+    return {
+      success: Boolean(response?.success),
+      data: normalizeCourse(rawCourse),
+    };
+  },
+
+  reviewCourse: async (
+    id: string,
+    decision: 'approved' | 'changes_requested',
+    notes?: string
+  ): Promise<CourseResponse> => {
+    const response = await apiRequest<any>(`/courses/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, notes }),
     });
 
     const rawCourse = response?.course ?? response?.data ?? response;

@@ -88,6 +88,20 @@ router.delete('/:id', authenticate, courseController.deleteCourse);
 router.post('/:id/publish', authenticate, courseController.publishCourse);
 
 /**
+ * POST /api/v1/courses/:id/submit-review
+ * Submit a course for admin review
+ * Requires authentication (course owner only)
+ */
+router.post('/:id/submit-review', authenticate, courseController.submitCourseForReview);
+
+/**
+ * POST /api/v1/courses/:id/review
+ * Review a course submission
+ * Requires authentication (admin only)
+ */
+router.post('/:id/review', authenticate, courseController.reviewCourse);
+
+/**
  * POST /api/v1/courses/:id/unpublish
  * Unpublish a course
  * Requires authentication (course owner only)

@@ -16,6 +16,8 @@ import {
 import { Course } from '@/types/course.types';
 import { getCourseIcon, getCourseBackgroundColor } from '@/utils/courseIcons';
 import { enrollmentService } from '@/services/enrollment.service';
+import { getCourseDisplayPrice } from '@/utils/coursePricing';
+import { useLocalization } from '@/context/LocalizationContext';
 
 interface CourseCardProps {
   course: Course;
@@ -30,9 +32,12 @@ const CourseCard: React.FC<CourseCardProps> = ({
   onEnroll,
   showEnrollButton = true,
 }) => {
+  const { locale, t } = useLocalization();
+
   const handleViewDetails = () => {
     onViewDetails?.(course._id);
   };
+  const priceDisplay = getCourseDisplayPrice(course, { locale });
 
   const handleEnroll = async () => {
     const isFreeCourse = course.isFree;
@@ -91,18 +96,27 @@ const CourseCard: React.FC<CourseCardProps> = ({
           <Chip label={course.category} size="small" color="primary" variant="outlined" />
           <Chip label={course.level} size="small" />
           {course.isFree && (
-            <Chip label="FREE" size="small" color="success" />
+            <Chip label={t('free')} size="small" color="success" />
           )}
         </Box>
         {course.instructor && (
           <Typography variant="caption" color="text.secondary">
-            By {course.instructor.firstName} {course.instructor.lastName}
+            {t('byInstructor', {
+              name: `${course.instructor.firstName} ${course.instructor.lastName}`,
+            })}
           </Typography>
         )}
         <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" color="primary">
-            {course.isFree ? 'FREE' : `${course.currency} ${course.price.toFixed(2)}`}
-          </Typography>
+          <Box>
+            <Typography variant="h6" color="primary">
+              {course.isFree ? t('free') : priceDisplay.currentPriceLabel}
+            </Typography>
+            {priceDisplay.hasDiscount && !course.isFree && (
+              <Typography variant="body2" color="text.secondary" sx={{ textDecoration: 'line-through' }}>
+                {priceDisplay.originalPriceLabel}
+              </Typography>
+            )}
+          </Box>
           {course.rating && (
             <Typography variant="body2" color="text.secondary">
               ⭐ {course.rating.toFixed(1)}
@@ -112,11 +126,11 @@ const CourseCard: React.FC<CourseCardProps> = ({
       </CardContent>
       <CardActions>
         <Button size="small" onClick={handleViewDetails}>
-          View Details
+          {t('viewDetails')}
         </Button>
         {showEnrollButton && (
           <Button size="small" variant="contained" onClick={handleEnroll}>
-            Enroll
+            {t('enroll')}
           </Button>
         )}
       </CardActions>

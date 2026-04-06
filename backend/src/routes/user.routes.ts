@@ -5,8 +5,8 @@
 
 import { Router } from 'express';
 import * as userController from '../controllers/user.controller';
-import { authenticate, requireRole } from '../middleware/auth.middleware';
-import { UserRole } from '../models/User';
+import { authenticate, requirePermission } from '../middleware/auth.middleware';
+import { Permission } from '../authorization/permissions';
 
 const router = Router();
 
@@ -14,7 +14,18 @@ const router = Router();
  * GET /api/v1/users
  * List/search users (admin only)
  */
-router.get('/', authenticate, requireRole(UserRole.ADMIN), userController.listUsers);
+router.get('/', authenticate, requirePermission(Permission.USERS_READ), userController.listUsers);
+
+/**
+ * GET /api/v1/users/permissions/catalog
+ * Return permission metadata and role defaults for admin tooling
+ */
+router.get(
+  '/permissions/catalog',
+  authenticate,
+  requirePermission(Permission.USERS_READ),
+  userController.getPermissionCatalog
+);
 
 /**
  * GET /api/v1/users/:id
@@ -31,6 +42,28 @@ router.get('/:id', authenticate, userController.getUserProfile);
  * Users can update their own profile, admins can update any profile
  */
 router.put('/:id', authenticate, userController.updateUserProfile);
+
+/**
+ * PATCH /api/v1/users/:id/status
+ * Update a user's active status (admin only)
+ */
+router.patch(
+  '/:id/status',
+  authenticate,
+  requirePermission(Permission.USERS_MANAGE),
+  userController.updateUserStatus
+);
+
+/**
+ * PATCH /api/v1/users/:id/permissions
+ * Update a user's custom permission assignment (admin-only)
+ */
+router.patch(
+  '/:id/permissions',
+  authenticate,
+  requirePermission(Permission.USERS_MANAGE),
+  userController.updateUserPermissions
+);
 
 /**
  * DELETE /api/v1/users/:id

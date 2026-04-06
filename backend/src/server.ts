@@ -33,10 +33,17 @@ import moduleRoutes from './routes/module.routes';
 import enrollmentRoutes from './routes/enrollment.routes';
 import quizRoutes from './routes/quiz.routes';
 import questionRoutes from './routes/question.routes';
+import questionBankRoutes from './routes/questionBank.routes';
 import paymentRoutes from './routes/payment.routes';
+import couponRoutes from './routes/coupon.routes';
+import certificateTemplateRoutes from './routes/certificateTemplate.routes';
 import certificateRoutes from './routes/certificate.routes';
 import notificationRoutes from './routes/notification.routes';
 import analyticsRoutes from './routes/analytics.routes';
+import assignmentRoutes from './routes/assignment.routes';
+import discussionRoutes from './routes/discussion.routes';
+import auditLogRoutes from './routes/auditLog.routes';
+import platformSettingsRoutes from './routes/platformSettings.routes';
 
 const app: Application = express();
 
@@ -106,10 +113,17 @@ async function startServer(): Promise<void> {
     app.use('/api/v1/enrollments', enrollmentRoutes);
     app.use('/api/v1/quizzes', quizRoutes);
     app.use('/api/v1/questions', questionRoutes);
+    app.use('/api/v1/question-bank', questionBankRoutes);
+    app.use('/api/v1/discussions', discussionRoutes);
     app.use('/api/v1/payments', paymentRoutes);
+    app.use('/api/v1/coupons', couponRoutes);
+    app.use('/api/v1/certificate-templates', certificateTemplateRoutes);
     app.use('/api/v1/certificates', certificateRoutes);
     app.use('/api/v1/notifications', notificationRoutes);
     app.use('/api/v1/analytics', analyticsRoutes);
+    app.use('/api/v1/assignments', assignmentRoutes);
+    app.use('/api/v1/audit-logs', auditLogRoutes);
+    app.use('/api/v1/platform-settings', platformSettingsRoutes);
     console.log('✅ API routes configured');
 
     // Start Express server

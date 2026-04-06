@@ -65,6 +65,14 @@ const normalizeEnrollment = (raw: AnyEnrollment): Enrollment => {
   return {
     _id: String(raw?._id ?? raw?.id ?? ''),
     studentId: normalizedStudentId,
+    student: studentDoc
+      ? {
+          _id: normalizedStudentId,
+          firstName: studentDoc?.firstName ?? '',
+          lastName: studentDoc?.lastName ?? '',
+          email: studentDoc?.email,
+        }
+      : undefined,
     courseId: normalizedCourseId,
     course: courseDoc
       ? {
@@ -119,10 +127,10 @@ export const enrollmentService = {
     };
   },
 
-  createEnrollment: async (courseId: string): Promise<EnrollmentResponse> => {
+  createEnrollment: async (courseId: string, paymentId: string): Promise<EnrollmentResponse> => {
     const response = await apiRequest<any>('/enrollments', {
       method: 'POST',
-      body: JSON.stringify({ courseId }),
+      body: JSON.stringify({ courseId, paymentId }),
     });
 
     return {
@@ -156,5 +164,13 @@ export const enrollmentService = {
       success: Boolean(response?.success),
       data: normalizeEnrollment(response?.data),
     };
+  },
+
+  deleteEnrollment: async (
+    enrollmentId: string
+  ): Promise<{ success: boolean; message: string }> => {
+    return apiRequest<{ success: boolean; message: string }>(`/enrollments/${enrollmentId}`, {
+      method: 'DELETE',
+    });
   },
 };

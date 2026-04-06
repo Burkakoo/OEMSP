@@ -5,6 +5,12 @@
 
 import User from '../models/User';
 import * as redis from '../config/redis.config';
+import {
+  Permission,
+  PermissionMode,
+  isPermission,
+  resolvePermissions,
+} from '../authorization/permissions';
 
 // DTOs and Interfaces
 export interface UserProfileDTO {
@@ -13,6 +19,9 @@ export interface UserProfileDTO {
   firstName: string;
   lastName: string;
   role: string;
+  permissionMode: PermissionMode;
+  customPermissions: Permission[];
+  permissions: Permission[];
   profile: {
     avatar?: string;
     bio?: string;
@@ -64,6 +73,11 @@ export interface UpdateUserProfileDTO {
   };
 }
 
+export interface UpdateUserPermissionsDTO {
+  permissionMode?: PermissionMode;
+  customPermissions?: Permission[];
+}
+
 export interface UserSearchFilters {
   role?: string;
   isActive?: boolean;
@@ -90,7 +104,9 @@ export interface PaginatedResult<T> {
 export interface IUserService {
   getUserProfile(userId: string): Promise<UserProfileDTO>;
   updateUserProfile(userId: string, updates: UpdateUserProfileDTO): Promise<UserProfileDTO>;
+  updateUserPermissions(userId: string, updates: UpdateUserPermissionsDTO): Promise<UserProfileDTO>;
   deleteUserAccount(userId: string): Promise<void>;
+  setUserActiveStatus(userId: string, isActive: boolean): Promise<UserProfileDTO>;
   searchUsers(filters: UserSearchFilters, pagination: PaginationParams): Promise<PaginatedResult<UserProfileDTO>>;
 }
 
@@ -324,6 +340,98 @@ class UserService implements IUserService {
     }
   }
 
+  async updateUserPermissions(
+    userId: string,
+    updates: UpdateUserPermissionsDTO
+  ): Promise<UserProfileDTO> {
+    try {
+      const existingUser = await User.findById(userId).lean().exec();
+
+      if (!existingUser) {
+        throw new Error('User not found');
+      }
+
+      const updateFields: Record<string, PermissionMode | Permission[] | Date> = {
+        updatedAt: new Date(),
+      };
+
+      if (updates.permissionMode !== undefined) {
+        if (!Object.values(PermissionMode).includes(updates.permissionMode)) {
+          throw new Error('Invalid permission mode');
+        }
+
+        updateFields.permissionMode = updates.permissionMode;
+      }
+
+      if (updates.customPermissions !== undefined) {
+        const invalidPermissions = updates.customPermissions.filter(
+          (permission) => !isPermission(permission)
+        );
+
+        if (invalidPermissions.length > 0) {
+          throw new Error(`Invalid permissions: ${invalidPermissions.join(', ')}`);
+        }
+
+        updateFields.customPermissions = [...new Set(updates.customPermissions)];
+      }
+
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $set: updateFields },
+        { new: true, runValidators: true }
+      )
+        .select('-passwordHash -__v')
+        .lean()
+        .exec();
+
+      if (!updatedUser) {
+        throw new Error('Failed to update user permissions');
+      }
+
+      const cacheKey = `${this.USER_CACHE_PREFIX}${userId}`;
+      await redis.del(cacheKey);
+
+      const userProfile = this.mapUserToDTO(updatedUser);
+
+      await redis.set(cacheKey, JSON.stringify(userProfile), this.CACHE_TTL);
+
+      return userProfile;
+    } catch (error) {
+      console.error('Update user permissions error:', error);
+      throw error;
+    }
+  }
+
+  async setUserActiveStatus(userId: string, isActive: boolean): Promise<UserProfileDTO> {
+    try {
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        {
+          $set: {
+            isActive,
+            updatedAt: new Date(),
+          },
+        },
+        { new: true, runValidators: true }
+      )
+        .select('-passwordHash -__v')
+        .lean()
+        .exec();
+
+      if (!updatedUser) {
+        throw new Error('User not found');
+      }
+
+      const cacheKey = `${this.USER_CACHE_PREFIX}${userId}`;
+      await redis.del(cacheKey);
+
+      return this.mapUserToDTO(updatedUser);
+    } catch (error) {
+      console.error('Set user active status error:', error);
+      throw error;
+    }
+  }
+
   /**
    * Search and list users with filters and pagination
    * 
@@ -400,12 +508,24 @@ class UserService implements IUserService {
    * @private
    */
   private mapUserToDTO(user: any): UserProfileDTO {
+    const permissionMode = user.permissionMode ?? PermissionMode.INHERIT;
+    const customPermissions = Array.isArray(user.customPermissions)
+      ? user.customPermissions.filter((permission: string) => isPermission(permission))
+      : [];
+
     return {
       id: user._id.toString(),
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,
+      permissionMode,
+      customPermissions,
+      permissions: resolvePermissions({
+        role: user.role,
+        permissionMode,
+        customPermissions,
+      }),
       profile: {
         avatar: user.profile?.avatar,
         bio: user.profile?.bio,

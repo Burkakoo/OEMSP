@@ -24,7 +24,7 @@ const PaymentSuccess: React.FC<PaymentSuccessProps> = ({
 
   const handleGoToCourse = () => {
     if (courseId) {
-      navigate(`/courses/${courseId}`);
+      navigate(`/courses/${courseId}/learn`);
     }
   };
 

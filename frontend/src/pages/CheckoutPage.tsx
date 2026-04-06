@@ -14,20 +14,31 @@ import {
   Alert,
   CircularProgress,
   Button,
+  TextField,
 } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '@hooks/useAppDispatch';
 import { fetchCourse, clearCurrentCourse } from '@store/slices/courseSlice';
 import PaymentForm from '../components/payment/PaymentForm';
 import { enrollmentService } from '@/services/enrollment.service';
+import { paymentService } from '@/services/payment.service';
+import { PaymentQuote } from '@/types/payment.types';
+import { useLocalization } from '@/context/LocalizationContext';
 
 const CheckoutPage: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { currentCourse, isLoading } = useAppSelector((state) => state.courses);
+  const { formatCurrency, t } = useLocalization();
   const [error, setError] = useState<string | null>(null);
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | undefined>(undefined);
+  const [pricingQuote, setPricingQuote] = useState<PaymentQuote | null>(null);
+  const [isQuoteLoading, setIsQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteSuccess, setQuoteSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (courseId) {
@@ -59,6 +70,36 @@ const CheckoutPage: React.FC = () => {
     checkEnrollmentStatus();
   }, [courseId]);
 
+  const loadPricingQuote = async (nextCouponCode?: string): Promise<boolean> => {
+    if (!courseId || !currentCourse || currentCourse.isFree) {
+      return false;
+    }
+
+    setIsQuoteLoading(true);
+    setQuoteError(null);
+
+    try {
+      const response = await paymentService.getPaymentQuote({
+        courseId,
+        couponCode: nextCouponCode,
+      });
+      setPricingQuote(response.data);
+      return true;
+    } catch (quoteLoadError) {
+      setPricingQuote(null);
+      setQuoteError((quoteLoadError as Error).message || 'Failed to load checkout pricing');
+      return false;
+    } finally {
+      setIsQuoteLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentCourse && !currentCourse.isFree && courseId) {
+      void loadPricingQuote(appliedCouponCode);
+    }
+  }, [courseId, currentCourse]);
+
   const handleFreeEnrollment = async () => {
     if (!currentCourse) return;
     
@@ -82,6 +123,39 @@ const CheckoutPage: React.FC = () => {
   const handlePaymentError = (errorMessage: string) => {
     setError(errorMessage);
   };
+
+  const handleApplyCoupon = async () => {
+    const normalizedCode = couponCode.trim().toUpperCase();
+    setQuoteSuccess(null);
+
+    if (!normalizedCode) {
+      setAppliedCouponCode(undefined);
+      setQuoteError(null);
+      await loadPricingQuote(undefined);
+      return;
+    }
+
+    setAppliedCouponCode(normalizedCode);
+    const applied = await loadPricingQuote(normalizedCode);
+    if (applied) {
+      setQuoteSuccess(`Coupon ${normalizedCode} applied.`);
+    }
+  };
+
+  const orderSummary = pricingQuote ?? (currentCourse
+    ? {
+        courseId: currentCourse._id,
+        courseTitle: currentCourse.title,
+        currency: currentCourse.currency,
+        basePrice: currentCourse.price,
+        saleDiscountAmount: currentCourse.saleDiscountAmount,
+        currentPrice: currentCourse.currentPrice,
+        couponDiscountAmount: 0,
+        finalPrice: currentCourse.currentPrice,
+        hasActiveSale: currentCourse.hasActiveSale,
+        appliedCoupon: undefined,
+      }
+    : null);
 
   const handleGoToCourse = () => {
     navigate(`/courses/${courseId}/learn`);
@@ -112,7 +186,7 @@ const CheckoutPage: React.FC = () => {
   return (
     <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
       <Typography variant="h4" gutterBottom>
-        Checkout
+        {t('checkout')}
       </Typography>
 
       {isEnrolled ? (
@@ -121,13 +195,13 @@ const CheckoutPage: React.FC = () => {
           <Grid>
             <Paper sx={{ p: 3, textAlign: 'center' }}>
               <Typography variant="h6" gutterBottom>
-                Already Enrolled
+                {t('alreadyEnrolled')}
               </Typography>
               <Typography variant="body1" sx={{ mb: 3 }}>
-                You are already enrolled in this course. You can continue learning right away!
+                {t('alreadyEnrolledMessage')}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Course: {currentCourse.title}
+                {t('courseLabel')}: {currentCourse.title}
               </Typography>
               <Button
                 variant="contained"
@@ -135,7 +209,7 @@ const CheckoutPage: React.FC = () => {
                 onClick={handleGoToCourse}
                 sx={{ minWidth: 200 }}
               >
-                Go to Course
+                {t('goToCourse')}
               </Button>
             </Paper>
           </Grid>
@@ -146,16 +220,16 @@ const CheckoutPage: React.FC = () => {
           <Grid>
             <Paper sx={{ p: 3, textAlign: 'center' }}>
               <Typography variant="h6" gutterBottom>
-                Free Course Enrollment
+                {t('freeCourseEnrollment')}
               </Typography>
               <Typography variant="body1" sx={{ mb: 3 }}>
-                This course is completely free! You can enroll immediately without any payment.
+                {t('freeCourseMessage')}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Course: {currentCourse.title}
+                {t('courseLabel')}: {currentCourse.title}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Instructor: {currentCourse.instructor?.firstName} {currentCourse.instructor?.lastName}
+                {t('instructorLabel')}: {currentCourse.instructor?.firstName} {currentCourse.instructor?.lastName}
               </Typography>
               {error && (
                 <Alert severity="error" sx={{ mb: 3 }}>
@@ -169,7 +243,7 @@ const CheckoutPage: React.FC = () => {
                 disabled={isEnrolling}
                 sx={{ minWidth: 200 }}
               >
-                {isEnrolling ? <CircularProgress size={24} /> : 'Enroll Now'}
+                {isEnrolling ? <CircularProgress size={24} /> : t('enrollNow')}
               </Button>
             </Paper>
           </Grid>
@@ -180,17 +254,41 @@ const CheckoutPage: React.FC = () => {
           <Grid size={{ xs: 12, md: 8 }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" gutterBottom>
-                Payment Information
+                {t('paymentInformation')}
               </Typography>
               {error && (
                 <Alert severity="error" sx={{ mb: 3 }}>
                   {error}
                 </Alert>
               )}
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mb: 2 }}>
+                <TextField
+                  fullWidth
+                  label={t('couponCode')}
+                  value={couponCode}
+                  onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+                  disabled={isQuoteLoading}
+                />
+                <Button variant="outlined" onClick={handleApplyCoupon} disabled={isQuoteLoading}>
+                  {t('apply')}
+                </Button>
+              </Box>
+              {quoteError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {quoteError}
+                </Alert>
+              )}
+              {quoteSuccess && !quoteError && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  {quoteSuccess}
+                </Alert>
+              )}
               {courseId && currentCourse && (
                 <PaymentForm
                   courseId={courseId}
-                  amount={currentCourse.price}
+                  amount={orderSummary?.finalPrice ?? currentCourse.currentPrice}
+                  currency={orderSummary?.currency ?? currentCourse.currency}
+                  couponCode={orderSummary?.appliedCoupon?.code}
                   onSuccess={handlePaymentSuccess}
                   onError={handlePaymentError}
                 />
@@ -200,26 +298,58 @@ const CheckoutPage: React.FC = () => {
           <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" gutterBottom>
-                Order Summary
+                {t('orderSummary')}
               </Typography>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body2">Subtotal</Typography>
+                <Typography variant="body2">{t('subtotal')}</Typography>
                 <Typography variant="body2">
-                  {currentCourse.price} {currentCourse.currency || 'ETB'}
+                  {orderSummary
+                    ? formatCurrency(orderSummary.basePrice, orderSummary.currency)
+                    : formatCurrency(currentCourse.price, currentCourse.currency || 'ETB')}
                 </Typography>
               </Box>
 
+              {Boolean(orderSummary?.saleDiscountAmount) && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2">{t('saleDiscount')}</Typography>
+                  <Typography variant="body2" color="success.main">
+                    -{formatCurrency(
+                      orderSummary?.saleDiscountAmount ?? 0,
+                      orderSummary?.currency ?? (currentCourse.currency || 'ETB')
+                    )}
+                  </Typography>
+                </Box>
+              )}
+
+              {Boolean(orderSummary?.couponDiscountAmount) && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2">
+                    Coupon {orderSummary?.appliedCoupon?.code}
+                  </Typography>
+                  <Typography variant="body2" color="success.main">
+                    -{formatCurrency(
+                      orderSummary?.couponDiscountAmount ?? 0,
+                      orderSummary?.currency ?? (currentCourse.currency || 'ETB')
+                    )}
+                  </Typography>
+                </Box>
+              )}
+
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="body2">Tax</Typography>
-                <Typography variant="body2">0 {currentCourse.currency || 'ETB'}</Typography>
+                <Typography variant="body2">{t('tax')}</Typography>
+                <Typography variant="body2">
+                  {formatCurrency(0, orderSummary?.currency ?? (currentCourse.currency || 'ETB'))}
+                </Typography>
               </Box>
 
               <Divider sx={{ my: 2 }} />
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="h6">Total</Typography>
+                <Typography variant="h6">{t('total')}</Typography>
                 <Typography variant="h6">
-                  {currentCourse.price} {currentCourse.currency || 'ETB'}
+                  {orderSummary
+                    ? formatCurrency(orderSummary.finalPrice, orderSummary.currency)
+                    : formatCurrency(currentCourse.currentPrice, currentCourse.currency || 'ETB')}
                 </Typography>
               </Box>
             </Paper>

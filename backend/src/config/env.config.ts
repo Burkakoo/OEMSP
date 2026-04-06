@@ -44,6 +44,15 @@ export interface EnvConfig {
   EMAIL_PASS: string;
   EMAIL_FROM: string;
 
+  // SMS Service Configuration (Africa's Talking)
+  AFRICAS_TALKING_USERNAME: string;
+  AFRICAS_TALKING_API_KEY: string;
+
+  // Push Notification Configuration (Firebase)
+  FIREBASE_PROJECT_ID: string;
+  FIREBASE_PRIVATE_KEY: string;
+  FIREBASE_CLIENT_EMAIL: string;
+
   // Redis Configuration
   REDIS_URL: string;
 
@@ -150,6 +159,15 @@ function validateEnvConfig(): EnvConfig {
       EMAIL_USER: emailUser,
       EMAIL_PASS: getEnvVariable('EMAIL_PASS', isTestEnv ? 'test-app-password' : ''),
       EMAIL_FROM: getEnvVariable('EMAIL_FROM', emailUser),
+
+      // SMS Service Configuration (Africa's Talking) - optional in development
+      AFRICAS_TALKING_USERNAME: process.env.AFRICAS_TALKING_USERNAME || (isTestEnv ? 'test-username' : ''),
+      AFRICAS_TALKING_API_KEY: process.env.AFRICAS_TALKING_API_KEY || (isTestEnv ? 'test-api-key' : ''),
+
+      // Push Notification Configuration (Firebase) - optional in development
+      FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || (isTestEnv ? 'test-project-id' : ''),
+      FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY || (isTestEnv ? 'test-private-key' : ''),
+      FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || (isTestEnv ? 'test@test.com' : ''),
 
       // Redis Configuration
       REDIS_URL: getEnvVariable('REDIS_URL', isTestEnv ? 'redis://localhost:6379' : ''),

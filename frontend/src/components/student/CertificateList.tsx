@@ -13,15 +13,20 @@ import {
   Paper,
   Box,
   Chip,
+  Link,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import VerifiedIcon from '@mui/icons-material/Verified';
+import { useLocalization } from '@/context/LocalizationContext';
 
 interface Certificate {
   _id: string;
+  certificateId: string;
   courseTitle: string;
   issuedAt: string;
   verificationCode: string;
+  publicVerificationUrl?: string;
+  skillsAwarded?: string[];
 }
 
 interface CertificateListProps {
@@ -30,11 +35,13 @@ interface CertificateListProps {
 }
 
 const CertificateList: React.FC<CertificateListProps> = ({ certificates, onDownload }) => {
+  const { formatDate, t } = useLocalization();
+
   if (certificates.length === 0) {
     return (
       <Paper sx={{ p: 3, textAlign: 'center' }}>
         <Typography variant="body2" color="text.secondary">
-          No certificates earned yet. Complete courses to earn certificates!
+          {t('noCertificates')}
         </Typography>
       </Paper>
     );
@@ -69,7 +76,7 @@ const CertificateList: React.FC<CertificateListProps> = ({ certificates, onDownl
             secondary={
               <Box>
                 <Typography variant="caption" component="span" color="text.secondary">
-                  Issued: {new Date(certificate.issuedAt).toLocaleDateString()}
+                  {t('issued')}: {formatDate(certificate.issuedAt)}
                 </Typography>
                 <br />
                 <Chip
@@ -78,6 +85,34 @@ const CertificateList: React.FC<CertificateListProps> = ({ certificates, onDownl
                   variant="outlined"
                   sx={{ mt: 0.5 }}
                 />
+                {certificate.certificateId && (
+                  <Chip
+                    label={`ID: ${certificate.certificateId}`}
+                    size="small"
+                    variant="outlined"
+                    sx={{ mt: 0.5, ml: 1 }}
+                  />
+                )}
+                {certificate.publicVerificationUrl && (
+                  <>
+                    <br />
+                    <Link
+                      href={certificate.publicVerificationUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      underline="hover"
+                    >
+                      {t('publicVerificationLink')}
+                    </Link>
+                  </>
+                )}
+                {certificate.skillsAwarded && certificate.skillsAwarded.length > 0 && (
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 1 }}>
+                    {certificate.skillsAwarded.map((skill) => (
+                      <Chip key={skill} label={skill} size="small" color="primary" variant="outlined" />
+                    ))}
+                  </Box>
+                )}
               </Box>
             }
           />

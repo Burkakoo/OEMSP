@@ -7,11 +7,29 @@ export enum CourseLevel {
   ADVANCED = 'advanced',
 }
 
+export enum CourseCurrency {
+  USD = 'USD',
+  EUR = 'EUR',
+  ETB = 'ETB',
+}
+
+export enum DiscountType {
+  PERCENTAGE = 'percentage',
+  FIXED = 'fixed',
+}
+
 export enum LessonType {
   VIDEO = 'video',
   TEXT = 'text',
   QUIZ = 'quiz',
   ASSIGNMENT = 'assignment',
+}
+
+export enum CourseReviewStatus {
+  DRAFT = 'draft',
+  PENDING_REVIEW = 'pending_review',
+  APPROVED = 'approved',
+  CHANGES_REQUESTED = 'changes_requested',
 }
 
 // Allowed file types for attachments
@@ -57,6 +75,8 @@ export interface ILesson {
   order: number;
   resources: IResource[];
   attachments: IAttachment[];
+  isDripEnabled: boolean;
+  dripDelayDays: number;
 }
 
 export interface IModule {
@@ -74,12 +94,23 @@ export interface ICourse extends Document {
   category: string;
   level: CourseLevel;
   price: number;
+  currency: CourseCurrency;
   isFree: boolean;
+  saleEnabled: boolean;
+  saleType?: DiscountType;
+  saleValue: number;
+  saleStartsAt?: Date;
+  saleEndsAt?: Date;
   thumbnail: string;
   modules: IModule[];
   prerequisites: string[];
   learningObjectives: string[];
   isPublished: boolean;
+  reviewStatus?: CourseReviewStatus;
+  reviewNotes?: string;
+  submittedForReviewAt?: Date;
+  reviewedAt?: Date;
+  reviewedBy?: mongoose.Types.ObjectId;
   enrollmentCount: number;
   rating: number;
   reviewCount: number;
@@ -213,6 +244,15 @@ const LessonSchema = new Schema<ILesson>(
       type: [AttachmentSchema],
       default: [],
     },
+    isDripEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    dripDelayDays: {
+      type: Number,
+      default: 0,
+      min: [0, 'Drip delay cannot be negative'],
+    },
   },
   { _id: true }
 );
@@ -288,9 +328,42 @@ const CourseSchema = new Schema<ICourse>(
       min: [0, 'Price cannot be negative'],
       max: [99999.99, 'Price cannot exceed 99999.99'],
     },
+    currency: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      enum: {
+        values: Object.values(CourseCurrency),
+        message: '{VALUE} is not a supported currency',
+      },
+      default: CourseCurrency.ETB,
+      required: [true, 'Course currency is required'],
+    },
     isFree: {
       type: Boolean,
       default: false,
+    },
+    saleEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    saleType: {
+      type: String,
+      enum: {
+        values: Object.values(DiscountType),
+        message: '{VALUE} is not a valid discount type',
+      },
+    },
+    saleValue: {
+      type: Number,
+      default: 0,
+      min: [0, 'Sale value cannot be negative'],
+    },
+    saleStartsAt: {
+      type: Date,
+    },
+    saleEndsAt: {
+      type: Date,
     },
     thumbnail: {
       type: String,
@@ -312,6 +385,29 @@ const CourseSchema = new Schema<ICourse>(
     isPublished: {
       type: Boolean,
       default: false,
+    },
+    reviewStatus: {
+      type: String,
+      enum: {
+        values: Object.values(CourseReviewStatus),
+        message: '{VALUE} is not a valid course review status',
+      },
+      default: CourseReviewStatus.DRAFT,
+    },
+    reviewNotes: {
+      type: String,
+      trim: true,
+      maxlength: [1000, 'Review notes cannot exceed 1000 characters'],
+    },
+    submittedForReviewAt: {
+      type: Date,
+    },
+    reviewedAt: {
+      type: Date,
+    },
+    reviewedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
     },
     enrollmentCount: {
       type: Number,
@@ -347,10 +443,46 @@ const CourseSchema = new Schema<ICourse>(
   }
 );
 
+CourseSchema.pre<ICourse>('validate', function () {
+  if (this.isFree) {
+    this.price = 0;
+    this.saleEnabled = false;
+    this.saleType = undefined;
+    this.saleValue = 0;
+    this.saleStartsAt = undefined;
+    this.saleEndsAt = undefined;
+  }
+
+  if (!this.saleEnabled) {
+    this.saleType = undefined;
+    this.saleValue = 0;
+    this.saleStartsAt = undefined;
+    this.saleEndsAt = undefined;
+    return;
+  }
+
+  if (!this.saleType) {
+    throw new Error('Sale type is required when sale pricing is enabled');
+  }
+
+  if (!this.saleValue || this.saleValue <= 0) {
+    throw new Error('Sale value must be greater than 0 when sale pricing is enabled');
+  }
+
+  if (this.saleType === DiscountType.PERCENTAGE && this.saleValue > 100) {
+    throw new Error('Percentage sale value cannot exceed 100');
+  }
+
+  if (this.saleStartsAt && this.saleEndsAt && this.saleStartsAt > this.saleEndsAt) {
+    throw new Error('Sale start date must be before sale end date');
+  }
+});
+
 // Indexes
 CourseSchema.index({ instructorId: 1 });
 CourseSchema.index({ category: 1 });
 CourseSchema.index({ isPublished: 1 });
+CourseSchema.index({ reviewStatus: 1 });
 CourseSchema.index({ rating: -1 });
 CourseSchema.index({ category: 1, level: 1, isPublished: 1 });
 

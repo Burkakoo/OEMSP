@@ -44,4 +44,11 @@ router.post('/free', authenticate, enrollmentController.enrollInFreeCourse);
  */
 router.put('/:id/progress', authenticate, enrollmentController.updateProgress);
 
+/**
+ * @route   DELETE /api/v1/enrollments/:id
+ * @desc    Remove an enrollment
+ * @access  Private (Student - own only, Instructor - own course only, Admin)
+ */
+router.delete('/:id', authenticate, enrollmentController.deleteEnrollment);
+
 export default router;

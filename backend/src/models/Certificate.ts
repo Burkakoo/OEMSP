@@ -6,12 +6,17 @@ export interface ICertificate extends Document {
   enrollmentId: mongoose.Types.ObjectId;
   studentId: mongoose.Types.ObjectId;
   courseId: mongoose.Types.ObjectId;
+  certificateId: string;
   studentName: string;
   courseTitle: string;
   instructorName: string;
   completionDate: Date;
   verificationCode: string;
   certificateUrl: string;
+  publicVerificationUrl?: string;
+  templateId?: mongoose.Types.ObjectId;
+  templateName?: string;
+  skillsAwarded: string[];
   issuedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +25,7 @@ export interface ICertificate extends Document {
 // Interface for Certificate model with static methods
 export interface ICertificateModel extends Model<ICertificate> {
   generateVerificationCode(): string;
+  generateCertificateId(): string;
 }
 
 // Main Certificate Schema
@@ -40,6 +46,13 @@ const CertificateSchema = new Schema<ICertificate>(
       type: Schema.Types.ObjectId,
       ref: 'Course',
       required: [true, 'Course ID is required'],
+    },
+    certificateId: {
+      type: String,
+      unique: true,
+      trim: true,
+      uppercase: true,
+      match: [/^CERT-[A-Z0-9]{10}$/, 'Certificate ID must match CERT-XXXXXXXXXX'],
     },
     studentName: {
       type: String,
@@ -78,6 +91,24 @@ const CertificateSchema = new Schema<ICertificate>(
       trim: true,
       match: [/^https:\/\/.+/, 'Certificate URL must be a valid HTTPS URL'],
     },
+    publicVerificationUrl: {
+      type: String,
+      trim: true,
+      match: [/^https?:\/\/.+/, 'Public verification URL must be a valid URL'],
+    },
+    templateId: {
+      type: Schema.Types.ObjectId,
+      ref: 'CertificateTemplate',
+    },
+    templateName: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Template name cannot exceed 100 characters'],
+    },
+    skillsAwarded: {
+      type: [String],
+      default: [],
+    },
     issuedAt: {
       type: Date,
       default: Date.now,
@@ -110,6 +141,7 @@ CertificateSchema.index({ studentId: 1 });
 
 // Unique index on verificationCode for certificate verification
 CertificateSchema.index({ verificationCode: 1 }, { unique: true });
+CertificateSchema.index({ certificateId: 1 }, { unique: true });
 
 // Static method to generate unique 16-character alphanumeric verification code
 CertificateSchema.statics.generateVerificationCode = function (): string {
@@ -130,6 +162,21 @@ CertificateSchema.statics.generateVerificationCode = function (): string {
   }
   
   return code;
+};
+
+CertificateSchema.statics.generateCertificateId = function (): string {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let suffix = '';
+  const randomBytes = crypto.randomBytes(10);
+
+  for (let i = 0; i < 10; i++) {
+    const byteValue = randomBytes[i];
+    if (byteValue !== undefined) {
+      suffix += characters[byteValue % characters.length];
+    }
+  }
+
+  return `CERT-${suffix}`;
 };
 
 // Pre-save hook to generate verification code if not provided
@@ -160,10 +207,36 @@ CertificateSchema.pre<ICertificate>('save', async function () {
       throw new Error('Failed to generate unique verification code after multiple attempts');
     }
   }
+
+  if (!this.certificateId) {
+    const Certificate = this.constructor as ICertificateModel;
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      const certificateId = Certificate.generateCertificateId();
+      const existing = await Certificate.findOne({ certificateId });
+
+      if (!existing) {
+        this.certificateId = certificateId;
+        isUnique = true;
+      }
+
+      attempts++;
+    }
+
+    if (!isUnique) {
+      throw new Error('Failed to generate unique certificate ID after multiple attempts');
+    }
+  }
   
   // Validate that verification code is set
   if (!this.verificationCode) {
     throw new Error('Verification code is required');
+  }
+  if (!this.certificateId) {
+    throw new Error('Certificate ID is required');
   }
 });
 

@@ -4,8 +4,14 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { UserRole } from '../models/User';
+import User from '../models/User';
 import authService, { TokenPayload } from '../services/auth.service';
+import {
+  Permission,
+  UserRole,
+  hasAnyPermission,
+  resolvePermissions,
+} from '../authorization/permissions';
 
 /**
  * Extended Express Request with user information
@@ -38,11 +44,42 @@ function extractToken(req: Request): string | null {
   }
 
   // Check cookies (if using cookie-based authentication)
+  if (req.cookies && req.cookies.accessToken) {
+    return req.cookies.accessToken;
+  }
+
   if (req.cookies && req.cookies.token) {
     return req.cookies.token;
   }
 
   return null;
+}
+
+async function hydrateUserContext(payload: TokenPayload): Promise<TokenPayload> {
+  const user = await User.findById(payload.userId)
+    .select('email role isActive isApproved permissionMode customPermissions')
+    .lean()
+    .exec();
+
+  if (!user || !user.isActive) {
+    throw new AuthenticationError('Account not found or inactive', 401);
+  }
+
+  if (user.role === UserRole.INSTRUCTOR && !user.isApproved) {
+    throw new AuthenticationError('Account pending admin approval', 403);
+  }
+
+  return {
+    ...payload,
+    email: user.email,
+    role: user.role,
+    permissionMode: user.permissionMode,
+    permissions: resolvePermissions({
+      role: user.role,
+      permissionMode: user.permissionMode,
+      customPermissions: user.customPermissions,
+    }),
+  };
 }
 
 /**
@@ -64,9 +101,11 @@ export const authenticate = async (
 
     // Verify token using auth service
     const payload = await authService.verifyToken(token);
+    const hydratedPayload = await hydrateUserContext(payload);
 
     // Attach user information to request
-    req.user = payload;
+    req.user = hydratedPayload;
+    req.token = token;
 
     next();
   } catch (error) {
@@ -130,6 +169,43 @@ export const requireRole = (roles: UserRole | UserRole[]) => {
 
       // Check if user's role is in allowed roles
       if (!allowedRoles.includes(req.user.role)) {
+        res.status(403).json({
+          success: false,
+          error: 'Insufficient permissions',
+        });
+        return;
+      }
+
+      next();
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
+        res.status(error.statusCode).json({
+          success: false,
+          error: error.message,
+        });
+        return;
+      }
+
+      res.status(403).json({
+        success: false,
+        error: 'Authorization failed',
+      });
+    }
+  };
+};
+
+export const requirePermission = (permissions: Permission | Permission[]) => {
+  const requiredPermissions = Array.isArray(permissions)
+    ? permissions
+    : [permissions];
+
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    try {
+      if (!req.user) {
+        throw new AuthenticationError('Authentication required', 401);
+      }
+
+      if (!hasAnyPermission(req.user.permissions, requiredPermissions)) {
         res.status(403).json({
           success: false,
           error: 'Insufficient permissions',
@@ -363,7 +439,8 @@ export const optionalAuth = async (
     if (token) {
       try {
         const payload = await authService.verifyToken(token);
-        req.user = payload;
+        req.user = await hydrateUserContext(payload);
+        req.token = token;
       } catch (error) {
         // Ignore token verification errors for optional auth
         // User will be treated as unauthenticated

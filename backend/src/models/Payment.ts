@@ -6,11 +6,28 @@ export enum PaymentMethod {
   DEBIT_CARD = 'debit_card',
   PAYPAL = 'paypal',
   STRIPE = 'stripe',
+  COUPON = 'coupon',
+  MOBILE_MONEY = 'mobile_money',
+  MPESA = 'mpesa',
+  MTN_MOMO = 'mtn_momo',
+  AIRTEL_MONEY = 'airtel_money',
+  ORANGE_MONEY = 'orange_money',
   TELEBIRR = 'telebirr',
   CBE_BIRR = 'cbe_birr',
   CBE = 'cbe',
   AWASH_BANK = 'awash_bank',
   SIINQEE_BANK = 'siinqee_bank',
+}
+
+export enum PurchaseType {
+  COURSE = 'course',
+  BUNDLE = 'bundle',
+  SUBSCRIPTION = 'subscription',
+}
+
+export enum BillingInterval {
+  MONTHLY = 'monthly',
+  YEARLY = 'yearly',
 }
 
 export enum PaymentStatus {
@@ -29,6 +46,15 @@ export const ETHIOPIAN_MOBILE_PAYMENT_METHODS = [
   PaymentMethod.CBE_BIRR,
 ];
 
+export const MOBILE_PAYMENT_METHODS = [
+  PaymentMethod.MOBILE_MONEY,
+  PaymentMethod.MPESA,
+  PaymentMethod.MTN_MOMO,
+  PaymentMethod.AIRTEL_MONEY,
+  PaymentMethod.ORANGE_MONEY,
+  ...ETHIOPIAN_MOBILE_PAYMENT_METHODS,
+];
+
 // Interfaces
 export interface IPaymentMetadata {
   ipAddress: string;
@@ -41,7 +67,14 @@ export interface IPayment extends Document {
   userId: mongoose.Types.ObjectId;
   courseId: mongoose.Types.ObjectId;
   amount: number;
+  originalAmount: number;
+  discountAmount: number;
+  couponCode?: string;
   currency: string;
+  purchaseType: PurchaseType;
+  purchaseReferenceId?: string;
+  billingInterval?: BillingInterval;
+  referralCode?: string;
   paymentMethod: PaymentMethod;
   status: PaymentStatus;
   transactionId: string;
@@ -49,6 +82,8 @@ export interface IPayment extends Document {
   createdAt: Date;
   completedAt?: Date;
   refundedAt?: Date;
+  refundReason?: string;
+  refundedBy?: mongoose.Types.ObjectId;
   updatedAt: Date;
 }
 
@@ -105,7 +140,22 @@ const PaymentSchema = new Schema<IPayment>(
     amount: {
       type: Number,
       required: [true, 'Payment amount is required'],
-      min: [0.01, 'Amount must be greater than 0'],
+      min: [0, 'Amount cannot be negative'],
+    },
+    originalAmount: {
+      type: Number,
+      required: [true, 'Original amount is required'],
+      min: [0, 'Original amount cannot be negative'],
+    },
+    discountAmount: {
+      type: Number,
+      required: [true, 'Discount amount is required'],
+      min: [0, 'Discount amount cannot be negative'],
+    },
+    couponCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
     },
     currency: {
       type: String,
@@ -116,6 +166,33 @@ const PaymentSchema = new Schema<IPayment>(
         values: SUPPORTED_CURRENCIES,
         message: '{VALUE} is not a supported currency. Supported: USD, EUR, ETB',
       },
+    },
+    purchaseType: {
+      type: String,
+      enum: {
+        values: Object.values(PurchaseType),
+        message: '{VALUE} is not a valid purchase type',
+      },
+      required: [true, 'Purchase type is required'],
+      default: PurchaseType.COURSE,
+    },
+    purchaseReferenceId: {
+      type: String,
+      trim: true,
+      maxlength: [200, 'Purchase reference ID cannot exceed 200 characters'],
+    },
+    billingInterval: {
+      type: String,
+      enum: {
+        values: Object.values(BillingInterval),
+        message: '{VALUE} is not a valid billing interval',
+      },
+    },
+    referralCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: [50, 'Referral code cannot exceed 50 characters'],
     },
     paymentMethod: {
       type: String,
@@ -150,6 +227,15 @@ const PaymentSchema = new Schema<IPayment>(
     refundedAt: {
       type: Date,
     },
+    refundReason: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Refund reason cannot exceed 500 characters'],
+    },
+    refundedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
   },
   {
     timestamps: true,
@@ -177,6 +263,14 @@ PaymentSchema.index({ createdAt: -1 });
 
 // Pre-save validation for Ethiopian mobile payment methods
 PaymentSchema.pre<IPayment>('save', function () {
+  if (this.originalAmount < this.amount) {
+    throw new Error('Original amount cannot be less than final amount');
+  }
+
+  if (this.discountAmount !== this.originalAmount - this.amount) {
+    throw new Error('Discount amount must equal original amount minus final amount');
+  }
+
   // Check if payment method requires phone number
   if (ETHIOPIAN_MOBILE_PAYMENT_METHODS.includes(this.paymentMethod)) {
     if (!this.metadata.phoneNumber) {
@@ -184,6 +278,10 @@ PaymentSchema.pre<IPayment>('save', function () {
         `Phone number is required for ${this.paymentMethod} payment method`
       );
     }
+  }
+
+  if (this.purchaseType === PurchaseType.SUBSCRIPTION && !this.billingInterval) {
+    throw new Error('Billing interval is required for subscription payments');
   }
 });
 

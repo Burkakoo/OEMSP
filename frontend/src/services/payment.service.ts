@@ -3,7 +3,7 @@
  */
 
 import apiRequest from './api';
-import { Payment, PaymentStatistics, ProcessPaymentData } from '../types/payment.types';
+import { Payment, PaymentQuote, PaymentStatistics, ProcessPaymentData } from '../types/payment.types';
 
 interface PaymentResponse {
   success: boolean;
@@ -20,7 +20,22 @@ interface PaymentStatisticsResponse {
   data: PaymentStatistics;
 }
 
+interface PaymentQuoteResponse {
+  success: boolean;
+  data: PaymentQuote;
+}
+
 export const paymentService = {
+  getPaymentQuote: async (pricingData: {
+    courseId: string;
+    couponCode?: string;
+  }): Promise<PaymentQuoteResponse> => {
+    return apiRequest<PaymentQuoteResponse>('/payments/quote', {
+      method: 'POST',
+      body: JSON.stringify(pricingData),
+    });
+  },
+
   processPayment: async (paymentData: ProcessPaymentData): Promise<PaymentResponse> => {
     return apiRequest<PaymentResponse>('/payments/process', {
       method: 'POST',

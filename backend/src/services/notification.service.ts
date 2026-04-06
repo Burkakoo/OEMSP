@@ -1,8 +1,143 @@
 import mongoose from 'mongoose';
 import Notification, { INotification, NotificationType } from '../models/Notification';
+import NotificationPreference, {
+  INotificationPreference,
+  INotificationTriggerPreferences,
+  NotificationChannel,
+  NotificationTrigger,
+} from '../models/NotificationPreference';
+import User from '../models/User';
 import { getCache, setCache, deleteCache } from '../utils/cache.utils';
+import { sendEmail, sendTemplateEmail } from './email.service';
 
 const CACHE_TTL = 300; // 5 minutes
+
+type NotificationPreferenceUpdate = {
+  channels?: Partial<INotificationPreference['channels']>;
+  triggers?: Partial<INotificationPreference['triggers']>;
+};
+
+const preferenceKeyByTrigger: Record<NotificationTrigger, keyof INotificationTriggerPreferences> = {
+  [NotificationTrigger.PAYMENT_UPDATES]: 'paymentUpdates',
+  [NotificationTrigger.CERTIFICATES]: 'certificates',
+  [NotificationTrigger.NEW_CONTENT]: 'newContent',
+  [NotificationTrigger.MISSED_DEADLINES]: 'missedDeadlines',
+  [NotificationTrigger.DISCUSSION_REPLIES]: 'discussionReplies',
+  [NotificationTrigger.PROMOTIONS]: 'promotions',
+  [NotificationTrigger.SYSTEM_ALERTS]: 'systemAlerts',
+};
+
+const notificationTypeToTrigger = (type: NotificationType): NotificationTrigger => {
+  switch (type) {
+    case NotificationType.PAYMENT_SUCCESS:
+    case NotificationType.PAYMENT_FAILED:
+    case NotificationType.PAYMENT_REFUNDED:
+      return NotificationTrigger.PAYMENT_UPDATES;
+    case NotificationType.CERTIFICATE_ISSUED:
+      return NotificationTrigger.CERTIFICATES;
+    case NotificationType.COURSE_UPDATE:
+    case NotificationType.NEW_CONTENT:
+      return NotificationTrigger.NEW_CONTENT;
+    case NotificationType.DISCUSSION_REPLY:
+      return NotificationTrigger.DISCUSSION_REPLIES;
+    case NotificationType.DEADLINE_MISSED:
+    case NotificationType.DEADLINE_REMINDER:
+      return NotificationTrigger.MISSED_DEADLINES;
+    default:
+      return NotificationTrigger.SYSTEM_ALERTS;
+  }
+};
+
+const getOrCreatePreferences = async (
+  userId: string
+): Promise<INotificationPreference> => {
+  return NotificationPreference.findOneAndUpdate(
+    { userId: new mongoose.Types.ObjectId(userId) },
+    { $setOnInsert: { userId: new mongoose.Types.ObjectId(userId) } },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    }
+  );
+};
+
+const isTriggerEnabled = (
+  preferences: INotificationPreference,
+  trigger: NotificationTrigger
+): boolean => {
+  const key = preferenceKeyByTrigger[trigger];
+  return Boolean(preferences.triggers[key]);
+};
+
+const invalidateNotificationCaches = async (userId: string): Promise<void> => {
+  await deleteCache(`notifications:user:${userId}`);
+};
+
+const deliverNotificationChannels = async (params: {
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  channels: NotificationChannel[];
+  data?: any;
+}): Promise<void> => {
+  const user = await User.findById(params.userId).select('email firstName lastName');
+  if (!user) {
+    return;
+  }
+
+  if (params.channels.includes(NotificationChannel.EMAIL) && user.email) {
+    try {
+      switch (params.type) {
+        case NotificationType.CERTIFICATE_ISSUED:
+          await sendTemplateEmail(user.email, 'certificateIssued', {
+            studentName: `${user.firstName} ${user.lastName}`.trim(),
+            courseTitle: params.data?.courseTitle || 'your course',
+            certificateUrl: params.data?.certificateUrl || params.data?.publicVerificationUrl || '#',
+          });
+          break;
+        case NotificationType.PAYMENT_SUCCESS:
+          await sendTemplateEmail(user.email, 'paymentSuccess', {
+            studentName: `${user.firstName} ${user.lastName}`.trim(),
+            courseTitle: params.data?.courseTitle || 'your course',
+            amount: params.data?.amount || 0,
+            currency: params.data?.currency || 'ETB',
+          });
+          break;
+        case NotificationType.PAYMENT_FAILED:
+          await sendTemplateEmail(user.email, 'paymentFailed', {
+            studentName: `${user.firstName} ${user.lastName}`.trim(),
+            courseTitle: params.data?.courseTitle || 'your course',
+            reason: params.data?.reason || 'Payment could not be processed',
+          });
+          break;
+        default:
+          await sendEmail({
+            to: user.email,
+            subject: params.title,
+            html: `<p>${params.message}</p>`,
+          });
+      }
+    } catch (error) {
+      console.error('Failed to send notification email:', error);
+    }
+  }
+
+  if (params.channels.includes(NotificationChannel.SMS)) {
+    console.log('SMS notification queued (provider integration pending):', {
+      userId: params.userId,
+      title: params.title,
+    });
+  }
+
+  if (params.channels.includes(NotificationChannel.PUSH)) {
+    console.log('Push notification queued (provider integration pending):', {
+      userId: params.userId,
+      title: params.title,
+    });
+  }
+};
 
 /**
  * Notification Service
@@ -18,6 +153,9 @@ export const createNotification = async (data: {
   title: string;
   message: string;
   data?: any;
+  channels?: NotificationChannel[];
+  trigger?: NotificationTrigger;
+  isVisibleInApp?: boolean;
 }): Promise<INotification> => {
   if (!mongoose.Types.ObjectId.isValid(data.userId)) {
     throw new Error('Invalid user ID');
@@ -29,12 +167,107 @@ export const createNotification = async (data: {
     title: data.title,
     message: data.message,
     data: data.data,
+    channels: data.channels || [NotificationChannel.IN_APP],
+    trigger: data.trigger,
+    isVisibleInApp: data.isVisibleInApp ?? true,
   });
 
   // Invalidate user's notification cache
-  await deleteCache(`notifications:user:${data.userId}`);
+  await invalidateNotificationCaches(data.userId);
 
   return notification;
+};
+
+export const createTriggeredNotification = async (data: {
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  data?: any;
+  trigger?: NotificationTrigger;
+}): Promise<INotification | null> => {
+  if (!mongoose.Types.ObjectId.isValid(data.userId)) {
+    throw new Error('Invalid user ID');
+  }
+
+  const trigger = data.trigger || notificationTypeToTrigger(data.type);
+  const preferences = await getOrCreatePreferences(data.userId);
+
+  if (!isTriggerEnabled(preferences, trigger)) {
+    return null;
+  }
+
+  const channels: NotificationChannel[] = [];
+  if (preferences.channels.inApp) channels.push(NotificationChannel.IN_APP);
+  if (preferences.channels.email) channels.push(NotificationChannel.EMAIL);
+  if (preferences.channels.sms) channels.push(NotificationChannel.SMS);
+  if (preferences.channels.push) channels.push(NotificationChannel.PUSH);
+
+  if (channels.length === 0) {
+    return null;
+  }
+
+  const notification = await createNotification({
+    userId: data.userId,
+    type: data.type,
+    title: data.title,
+    message: data.message,
+    data: data.data,
+    channels,
+    trigger,
+    isVisibleInApp: channels.includes(NotificationChannel.IN_APP),
+  });
+
+  await deliverNotificationChannels({
+    userId: data.userId,
+    type: data.type,
+    title: data.title,
+    message: data.message,
+    channels,
+    data: data.data,
+  });
+
+  return notification;
+};
+
+export const getNotificationPreferences = async (
+  userId: string
+): Promise<INotificationPreference> => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new Error('Invalid user ID');
+  }
+
+  return getOrCreatePreferences(userId);
+};
+
+export const updateNotificationPreferences = async (
+  userId: string,
+  updates: NotificationPreferenceUpdate
+): Promise<INotificationPreference> => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new Error('Invalid user ID');
+  }
+
+  const preferences = await getOrCreatePreferences(userId);
+
+  if (updates.channels) {
+    preferences.channels = {
+      ...preferences.channels,
+      ...updates.channels,
+    };
+  }
+
+  if (updates.triggers) {
+    preferences.triggers = {
+      ...preferences.triggers,
+      ...updates.triggers,
+    };
+  }
+
+  await preferences.save();
+  await invalidateNotificationCaches(userId);
+
+  return preferences;
 };
 
 /**
@@ -54,7 +287,7 @@ export const getNotifications = async (filters: {
   }
 
   // Build query
-  const query: any = { userId };
+  const query: any = { userId, isVisibleInApp: true };
   if (isRead !== undefined) {
     query.isRead = isRead;
   }
@@ -128,7 +361,7 @@ export const markAsRead = async (notificationId: string, userId: string): Promis
   await notification.save();
 
   // Invalidate user's notification cache
-  await deleteCache(`notifications:user:${userId}`);
+  await invalidateNotificationCaches(userId);
 
   return notification;
 };
@@ -147,7 +380,7 @@ export const markAllAsRead = async (userId: string): Promise<{ modifiedCount: nu
   );
 
   // Invalidate user's notification cache
-  await deleteCache(`notifications:user:${userId}`);
+  await invalidateNotificationCaches(userId);
 
   return { modifiedCount: result.modifiedCount };
 };
@@ -174,7 +407,7 @@ export const deleteNotification = async (notificationId: string, userId: string)
   }
 
   // Invalidate user's notification cache
-  await deleteCache(`notifications:user:${userId}`);
+  await invalidateNotificationCaches(userId);
 };
 
 /**
@@ -206,6 +439,7 @@ export const getUnreadCount = async (userId: string): Promise<number> => {
   const count = await Notification.countDocuments({
     userId,
     isRead: false,
+    isVisibleInApp: true,
   });
 
   return count;

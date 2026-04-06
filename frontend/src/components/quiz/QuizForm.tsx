@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  Alert,
   Box,
   TextField,
   Button,
@@ -18,15 +19,20 @@ import {
   Grid,
   ListItemText,
   FormControlLabel,
+  Chip,
+  CircularProgress,
 } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { Quiz, QuizQuestion } from '../../types/quiz.types';
 import { Module } from '../../types/course.types';
+import { questionBankService } from '@/services/questionBank.service';
+import { QuestionBankItem } from '@/types/questionBank.types';
 
 interface QuizFormProps {
   initialData?: Quiz;
   modules?: Module[];
   defaultModuleId?: string;
+  courseId?: string;
   onSubmit: (quizData: Partial<Quiz>) => void;
   onCancel: () => void;
 }
@@ -35,6 +41,7 @@ const QuizForm: React.FC<QuizFormProps> = ({
   initialData,
   modules,
   defaultModuleId,
+  courseId,
   onSubmit,
   onCancel,
 }) => {
@@ -44,6 +51,8 @@ const QuizForm: React.FC<QuizFormProps> = ({
   const [passingScore, setPassingScore] = useState(initialData?.passingScore || 70);
   const [duration, setDuration] = useState(initialData?.duration || 30);
   const [maxAttempts, setMaxAttempts] = useState(initialData?.maxAttempts || 1);
+  const [shuffleQuestions, setShuffleQuestions] = useState(initialData?.shuffleQuestions ?? false);
+  const [shuffleOptions, setShuffleOptions] = useState(initialData?.shuffleOptions ?? false);
   const [isPublished, setIsPublished] = useState(initialData?.isPublished ?? true);
   const [questions, setQuestions] = useState<Partial<QuizQuestion>[]>(
     initialData?.questions || [
@@ -57,6 +66,10 @@ const QuizForm: React.FC<QuizFormProps> = ({
       },
     ]
   );
+  const [questionBankItems, setQuestionBankItems] = useState<QuestionBankItem[]>([]);
+  const [selectedQuestionBankIds, setSelectedQuestionBankIds] = useState<string[]>([]);
+  const [questionBankLoading, setQuestionBankLoading] = useState(false);
+  const [questionBankError, setQuestionBankError] = useState<string | null>(null);
 
   useEffect(() => {
     // Default module selection for create flow once modules are loaded
@@ -68,6 +81,43 @@ const QuizForm: React.FC<QuizFormProps> = ({
       setModuleId(preferred);
     }
   }, [initialData, modules, moduleId, defaultModuleId]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadQuestionBank = async () => {
+      if (!courseId) {
+        setQuestionBankItems([]);
+        setQuestionBankError(null);
+        return;
+      }
+
+      setQuestionBankLoading(true);
+      setQuestionBankError(null);
+
+      try {
+        const response = await questionBankService.getCourseQuestionBank(courseId, {
+          includeInactive: true,
+        });
+
+        if (!active) return;
+        setQuestionBankItems(response.data ?? []);
+      } catch (error) {
+        if (!active) return;
+        setQuestionBankError((error as Error).message || 'Failed to load question bank');
+      } finally {
+        if (active) {
+          setQuestionBankLoading(false);
+        }
+      }
+    };
+
+    void loadQuestionBank();
+
+    return () => {
+      active = false;
+    };
+  }, [courseId]);
 
   const handleAddQuestion = () => {
     setQuestions([
@@ -130,6 +180,36 @@ const QuizForm: React.FC<QuizFormProps> = ({
     setQuestions(updatedQuestions);
   };
 
+  const handleImportQuestionBankItems = () => {
+    if (selectedQuestionBankIds.length === 0) {
+      return;
+    }
+
+    const itemsToImport = selectedQuestionBankIds
+      .map((itemId) => questionBankItems.find((item) => item.id === itemId))
+      .filter((item): item is QuestionBankItem => Boolean(item))
+      .filter((item) => item.isActive);
+
+    if (itemsToImport.length === 0) {
+      return;
+    }
+
+    const importedQuestions: Partial<QuizQuestion>[] = itemsToImport.map((item) => ({
+      type: item.type,
+      text: item.text,
+      options: item.type === 'short_answer' ? [] : [...item.options],
+      correctAnswer: Array.isArray(item.correctAnswer)
+        ? [...item.correctAnswer]
+        : item.correctAnswer,
+      points: item.points,
+      explanation: item.explanation ?? '',
+      questionBankItemId: item.id,
+    }));
+
+    setQuestions((prev) => [...prev, ...importedQuestions]);
+    setSelectedQuestionBankIds([]);
+  };
+
   const handleRemoveOption = (questionIndex: number, optionIndex: number) => {
     const updatedQuestions = [...questions];
     if (updatedQuestions[questionIndex].options && updatedQuestions[questionIndex].options!.length > 2) {
@@ -164,6 +244,7 @@ const QuizForm: React.FC<QuizFormProps> = ({
         correctAnswer,
         points: Number(q.points) || 1,
         explanation: q.explanation ? String(q.explanation).trim() : undefined,
+        questionBankItemId: (q as any).questionBankItemId || undefined,
       } as any;
 
       if ((q as any)._id) {
@@ -180,6 +261,8 @@ const QuizForm: React.FC<QuizFormProps> = ({
       duration,
       passingScore,
       maxAttempts,
+      shuffleQuestions,
+      shuffleOptions,
       isPublished,
       questions: normalizedQuestions,
     };
@@ -273,6 +356,27 @@ const QuizForm: React.FC<QuizFormProps> = ({
           </Grid>
         </Grid>
 
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 2 }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={shuffleQuestions}
+                onChange={(e) => setShuffleQuestions(e.target.checked)}
+              />
+            }
+            label="Shuffle question order for students"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={shuffleOptions}
+                onChange={(e) => setShuffleOptions(e.target.checked)}
+              />
+            }
+            label="Shuffle answer choices for students"
+          />
+        </Box>
+
         <FormControlLabel
           sx={{ mt: 1 }}
           control={
@@ -284,6 +388,85 @@ const QuizForm: React.FC<QuizFormProps> = ({
           label="Publish quiz now (students can see and take it)"
         />
       </Paper>
+
+      {courseId && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Question Bank
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Import reusable questions into this quiz. Imported questions stay editable here.
+          </Typography>
+
+          {questionBankError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {questionBankError}
+            </Alert>
+          )}
+
+          {questionBankLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+              <CircularProgress size={24} />
+            </Box>
+          ) : questionBankItems.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No question bank items found for this course yet.
+            </Typography>
+          ) : (
+            <>
+              <FormControl fullWidth margin="normal">
+                <InputLabel id="question-bank-import-label">Import From Question Bank</InputLabel>
+                <Select
+                  labelId="question-bank-import-label"
+                  multiple
+                  value={selectedQuestionBankIds}
+                  label="Import From Question Bank"
+                  onChange={(e) =>
+                    setSelectedQuestionBankIds(
+                      Array.isArray(e.target.value)
+                        ? e.target.value
+                        : String(e.target.value).split(',')
+                    )
+                  }
+                  renderValue={(selected) => `${(selected as string[]).length} item(s) selected`}
+                >
+                  {questionBankItems.map((item) => (
+                    <MenuItem key={item.id} value={item.id} disabled={!item.isActive}>
+                      <Checkbox checked={selectedQuestionBankIds.includes(item.id)} />
+                      <ListItemText
+                        primary={item.text}
+                        secondary={`${item.type.replace('_', ' ')}${item.isActive ? '' : ' • inactive'}`}
+                      />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                {questionBankItems
+                  .filter((item) => item.isActive)
+                  .slice(0, 6)
+                  .map((item) => (
+                    <Chip
+                      key={`question-bank-chip-${item.id}`}
+                      label={item.text.length > 40 ? `${item.text.slice(0, 40)}...` : item.text}
+                      size="small"
+                      variant="outlined"
+                    />
+                  ))}
+              </Box>
+
+              <Button
+                variant="outlined"
+                onClick={handleImportQuestionBankItems}
+                disabled={selectedQuestionBankIds.length === 0}
+              >
+                Import Selected Questions
+              </Button>
+            </>
+          )}
+        </Paper>
+      )}
 
       <Typography variant="h6" gutterBottom>
         Questions
@@ -301,6 +484,18 @@ const QuizForm: React.FC<QuizFormProps> = ({
               <DeleteIcon />
             </IconButton>
           </Box>
+
+          {(question as any).questionBankItemId && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1 }}>
+              <Chip label="Imported from question bank" size="small" color="primary" variant="outlined" />
+              <Button
+                size="small"
+                onClick={() => handleQuestionChange(qIndex, 'questionBankItemId', undefined)}
+              >
+                Unlink
+              </Button>
+            </Box>
+          )}
 
           <TextField
             fullWidth

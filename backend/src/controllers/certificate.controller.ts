@@ -304,11 +304,14 @@ export const downloadCertificate = async (
     }
 
     const pdfBuffer = await certificateService.generateCertificatePdf({
+      certificateId: certificate.certificateId,
       studentName: certificate.studentName,
       courseTitle: certificate.courseTitle,
       instructorName: certificate.instructorName,
       completionDate: new Date(certificate.completionDate),
       verificationCode: certificate.verificationCode,
+      templateName: certificate.templateName,
+      skillsAwarded: certificate.skillsAwarded,
     });
 
     const fileName = `${sanitizeFileName(certificate.courseTitle)}-certificate.pdf`;
@@ -322,6 +325,47 @@ export const downloadCertificate = async (
     res.status(statusCode).json({
       success: false,
       message: error.message || 'Failed to download certificate',
+    });
+  }
+};
+
+export const getPublicCertificate = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const rawCertificateId = req.params.certificateId;
+    const certificateId = Array.isArray(rawCertificateId)
+      ? rawCertificateId[0]
+      : rawCertificateId;
+
+    if (!certificateId) {
+      res.status(400).json({
+        success: false,
+        message: 'Certificate ID is required',
+      });
+      return;
+    }
+
+    const certificate = await certificateService.getPublicCertificate(certificateId);
+
+    if (!certificate) {
+      res.status(404).json({
+        success: false,
+        message: 'Certificate not found',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      verified: true,
+      data: certificate,
+    });
+  } catch (error: any) {
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to load public certificate',
     });
   }
 };

@@ -21,6 +21,13 @@ router.post(
 );
 
 /**
+ * @route   GET /api/v1/certificates/public/:certificateId
+ * @desc    Get public certificate verification details
+ * @access  Public
+ */
+router.get('/public/:certificateId', certificateController.getPublicCertificate);
+
+/**
  * @route   GET /api/v1/certificates/:id/download
  * @desc    Download certificate PDF
  * @access  Private (Certificate owner or Admin)

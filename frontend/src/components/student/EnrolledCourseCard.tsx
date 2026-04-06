@@ -4,28 +4,33 @@
 
 import React from 'react';
 import {
-  Card,
-  CardContent,
-  CardMedia,
-  Typography,
   Box,
   Button,
+  Card,
   CardActions,
+  CardContent,
+  CardMedia,
   LinearProgress,
+  Typography,
 } from '@mui/material';
 import { Enrollment } from '../../types/enrollment.types';
+import { useLocalization } from '@/context/LocalizationContext';
 
 interface EnrolledCourseCardProps {
   enrollment: Enrollment;
   onContinue?: (enrollmentId: string) => void;
   onViewCertificate?: (enrollmentId: string) => void;
+  onUnenroll?: (enrollmentId: string) => void;
 }
 
 const EnrolledCourseCard: React.FC<EnrolledCourseCardProps> = ({
   enrollment,
   onContinue,
   onViewCertificate,
+  onUnenroll,
 }) => {
+  const { formatDate } = useLocalization();
+
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardMedia
@@ -55,7 +60,7 @@ const EnrolledCourseCard: React.FC<EnrolledCourseCardProps> = ({
         </Box>
         {enrollment.isCompleted && (
           <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block' }}>
-            ✓ Completed on {new Date(enrollment.completedAt!).toLocaleDateString()}
+            Completed on {formatDate(enrollment.completedAt!)}
           </Typography>
         )}
       </CardContent>
@@ -65,12 +70,13 @@ const EnrolledCourseCard: React.FC<EnrolledCourseCardProps> = ({
             View Certificate
           </Button>
         ) : (
-          <Button
-            size="small"
-            variant="contained"
-            onClick={() => onContinue?.(enrollment._id)}
-          >
+          <Button size="small" variant="contained" onClick={() => onContinue?.(enrollment._id)}>
             Continue Learning
+          </Button>
+        )}
+        {onUnenroll && (
+          <Button size="small" color="error" onClick={() => onUnenroll(enrollment._id)}>
+            Unenroll
           </Button>
         )}
       </CardActions>

@@ -21,6 +21,9 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Course } from '@/types/course.types';
 import { getCourseIcon, getCourseBackgroundColor } from '@/utils/courseIcons';
+import { getCourseDisplayPrice } from '@/utils/coursePricing';
+import { formatLessonAvailabilityLabel } from '@/utils/lessonAvailability';
+import { useLocalization } from '@/context/LocalizationContext';
 
 interface CourseDetailsProps {
   course: Course;
@@ -36,7 +39,9 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
   isEnrolled = false,
 }) => {
   const navigate = useNavigate();
+  const { locale, t } = useLocalization();
   const isFreeCourse = course.isFree;
+  const priceDisplay = getCourseDisplayPrice(course, { locale });
 
   const handleGoToCourse = () => {
     navigate(`/courses/${course._id}/learn`);
@@ -55,21 +60,23 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
             </Typography>
             {course.instructor && (
               <Typography variant="subtitle1" color="text.secondary" gutterBottom>
-                By {course.instructor.firstName} {course.instructor.lastName}
+                {t('byInstructor', {
+                  name: `${course.instructor.firstName} ${course.instructor.lastName}`,
+                })}
               </Typography>
             )}
             {isFreeCourse && (
-              <Chip label="FREE" color="success" sx={{ mt: 1 }} />
+              <Chip label={t('free')} color="success" sx={{ mt: 1 }} />
             )}
           </Box>
           {showEnrollButton && !isEnrolled && (
             <Button variant="contained" size="large" onClick={handleEnroll}>
-              Enroll Now - {isFreeCourse ? 'FREE' : `${course.currency} ${course.price.toFixed(2)}`}
+              {t('enrollNow')} - {isFreeCourse ? t('free') : priceDisplay.currentPriceLabel}
             </Button>
           )}
           {isEnrolled && (
             <Button variant="contained" size="large" color="primary" onClick={handleGoToCourse}>
-              Go to Course
+              {t('goToCourse')}
             </Button>
           )}
         </Box>
@@ -121,9 +128,9 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
           <Chip label={course.category} color="primary" />
           <Chip label={course.level} />
           {course.isPublished ? (
-            <Chip label="Published" color="success" variant="outlined" />
+            <Chip label={t('published')} color="success" variant="outlined" />
           ) : (
-            <Chip label="Draft" color="warning" variant="outlined" />
+            <Chip label={t('draft')} color="warning" variant="outlined" />
           )}
         </Box>
 
@@ -132,23 +139,38 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
         </Typography>
 
         <Box sx={{ display: 'flex', gap: 3, mt: 2 }}>
+          {!isFreeCourse && (
+            <Box>
+              <Typography variant="caption" color="text.secondary">
+                {t('price')}
+              </Typography>
+              <Typography variant="h6">
+                {priceDisplay.currentPriceLabel}
+              </Typography>
+              {priceDisplay.hasDiscount && (
+                <Typography variant="body2" color="text.secondary" sx={{ textDecoration: 'line-through' }}>
+                  {priceDisplay.originalPriceLabel}
+                </Typography>
+              )}
+            </Box>
+          )}
           <Box>
             <Typography variant="caption" color="text.secondary">
-              Students Enrolled
+              {t('studentsEnrolled')}
             </Typography>
             <Typography variant="h6">{course.enrollmentCount}</Typography>
           </Box>
           {course.rating && (
             <Box>
               <Typography variant="caption" color="text.secondary">
-                Rating
+                {t('rating')}
               </Typography>
               <Typography variant="h6">⭐ {course.rating.toFixed(1)}</Typography>
             </Box>
           )}
           <Box>
             <Typography variant="caption" color="text.secondary">
-              Modules
+              {t('modules')}
             </Typography>
             <Typography variant="h6">{course.modules.length}</Typography>
           </Box>
@@ -157,12 +179,12 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
 
       <Paper sx={{ p: 3 }}>
         <Typography variant="h5" gutterBottom>
-          Course Content
+          {t('courseContent')}
         </Typography>
         <Divider sx={{ mb: 2 }} />
 
         {course.modules.length === 0 ? (
-          <Typography color="text.secondary">No modules available yet.</Typography>
+          <Typography color="text.secondary">{t('noModules')}</Typography>
         ) : (
           course.modules.map((module: any, index: number) => (
             <Accordion key={module._id}>
@@ -177,7 +199,7 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
                 </Typography>
                 {module.lessons.length === 0 ? (
                   <Typography variant="body2" color="text.secondary">
-                    No lessons available yet.
+                    {t('noLessons')}
                   </Typography>
                 ) : (
                   <List>
@@ -185,7 +207,7 @@ const CourseDetails: React.FC<CourseDetailsProps> = ({
                       <ListItem key={lesson._id}>
                         <ListItemText
                           primary={`${lessonIndex + 1}. ${lesson.title}`}
-                          secondary={`Duration: ${lesson.duration} minutes`}
+                          secondary={`${`Duration: ${lesson.duration} minutes`}${formatLessonAvailabilityLabel(lesson) ? ` • ${formatLessonAvailabilityLabel(lesson)}` : ''}`}
                         />
                       </ListItem>
                     ))}

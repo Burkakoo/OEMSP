@@ -1,22 +1,20 @@
-/**
- * Register form component
- */
-
 import React, { useState } from 'react';
 import {
-  Box,
-  TextField,
-  Button,
-  Typography,
   Alert,
-  Link,
+  Box,
+  Button,
   CircularProgress,
   FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   FormHelperText,
+  InputLabel,
+  Link,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Typography,
 } from '@mui/material';
+import { SelectChangeEvent } from '@mui/material/Select';
 import { useAppDispatch, useAppSelector } from '@hooks/useAppDispatch';
 import { register, verifyEmail, login, clearError } from '@store/slices/authSlice';
 import { RegisterData } from '@/types/auth.types';
@@ -43,25 +41,32 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
   const [isVerificationStep, setIsVerificationStep] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [validationErrors, setValidationErrors] = useState<{
-    [key: string]: string;
-  }>({});
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  const clearMessages = () => {
+    setLocalError(null);
+    setSuccessMessage(null);
+
+    if (error) {
+      dispatch(clearError());
+    }
+  };
 
   const validateRegistrationForm = (): boolean => {
-    const errors: { [key: string]: string } = {};
+    const errors: Record<string, string> = {};
 
-    if (!formData.firstName) {
+    if (!formData.firstName.trim()) {
       errors.firstName = 'First name is required';
     }
 
-    if (!formData.lastName) {
+    if (!formData.lastName.trim()) {
       errors.lastName = 'Last name is required';
     }
 
-    if (!formData.email) {
+    if (!formData.email.trim()) {
       errors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      errors.email = 'Email is invalid';
+      errors.email = 'Enter a valid email address';
     }
 
     if (!formData.password) {
@@ -71,7 +76,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
     }
 
     if (!confirmPassword) {
-      errors.confirmPassword = 'Please confirm your password';
+      errors.confirmPassword = 'Confirm your password';
     } else if (formData.password !== confirmPassword) {
       errors.confirmPassword = 'Passwords do not match';
     }
@@ -81,69 +86,56 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
   };
 
   const validateVerificationForm = (): boolean => {
-    const errors: { [key: string]: string } = {};
+    const errors: Record<string, string> = {};
 
     if (!verificationCode.trim()) {
-      errors.verificationCode = 'OTP code is required';
+      errors.verificationCode = 'Enter the 6-digit code from your email';
     } else if (!/^\d{6}$/.test(verificationCode.trim())) {
-      errors.verificationCode = 'OTP must be a 6-digit code';
+      errors.verificationCode = 'Verification code must be 6 digits';
     }
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const clearMessages = () => {
-    setLocalError(null);
-    setSuccessMessage(null);
-    if (error) {
-      dispatch(clearError());
-    }
-  };
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | { target: { name: string; value: string } }
-  ) => {
-    const { name, value } = e.target;
-    if (name) {
-      setFormData((prev: RegisterData) => ({ ...prev, [name]: value as string }));
-      if (validationErrors[name]) {
-        setValidationErrors((prev: Record<string, string>) => {
-          const newErrors = { ...prev };
-          delete newErrors[name];
-          return newErrors;
-        });
-      }
-    }
-    clearMessages();
-  };
-
-  const handleConfirmPasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setConfirmPassword(e.target.value);
-    if (validationErrors.confirmPassword) {
-      setValidationErrors((prev: Record<string, string>) => {
-        const newErrors = { ...prev };
-        delete newErrors.confirmPassword;
-        return newErrors;
+  const clearFieldError = (fieldName: string) => {
+    if (validationErrors[fieldName]) {
+      setValidationErrors((prev) => {
+        const next = { ...prev };
+        delete next[fieldName];
+        return next;
       });
     }
+  };
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    clearFieldError(name);
     clearMessages();
   };
 
-  const handleVerificationCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setVerificationCode(e.target.value);
-    if (validationErrors.verificationCode) {
-      setValidationErrors((prev: Record<string, string>) => {
-        const newErrors = { ...prev };
-        delete newErrors.verificationCode;
-        return newErrors;
-      });
-    }
+  const handleRoleChange = (event: SelectChangeEvent) => {
+    const value = event.target.value as RegisterData['role'];
+    setFormData((prev) => ({ ...prev, role: value }));
+    clearFieldError('role');
     clearMessages();
   };
 
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConfirmPasswordChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setConfirmPassword(event.target.value);
+    clearFieldError('confirmPassword');
+    clearMessages();
+  };
+
+  const handleVerificationCodeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setVerificationCode(event.target.value);
+    clearFieldError('verificationCode');
+    clearMessages();
+  };
+
+  const handleRegisterSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     clearMessages();
 
     if (!validateRegistrationForm()) {
@@ -153,15 +145,15 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
     try {
       await dispatch(register(formData)).unwrap();
       setIsVerificationStep(true);
-      setSuccessMessage(`We sent a 6-digit OTP to ${formData.email}. Enter it below to verify your account.`);
+      setSuccessMessage(`We sent a 6-digit verification code to ${formData.email}.`);
       setValidationErrors({});
-    } catch (err) {
-      setLocalError((err as Error).message || 'Registration failed');
+    } catch (submissionError) {
+      setLocalError((submissionError as Error).message || 'Registration failed');
     }
   };
 
-  const handleVerifySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleVerifySubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     clearMessages();
 
     if (!validateVerificationForm()) {
@@ -186,212 +178,223 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onLoginClick }) 
       ).unwrap();
 
       onSuccess?.();
-    } catch (err) {
-      setLocalError((err as Error).message || 'Verification failed');
+    } catch (submissionError) {
+      setLocalError((submissionError as Error).message || 'Verification failed');
     }
   };
 
   if (isVerificationStep) {
     return (
       <Box component="form" onSubmit={handleVerifySubmit} noValidate>
-        <Typography variant="h5" component="h1" gutterBottom>
-          Verify Email
-        </Typography>
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="overline" color="primary.main">
+              Verify email
+            </Typography>
+            <Typography variant="h4" sx={{ mt: 0.5, mb: 1 }}>
+              Confirm your account
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Enter the 6-digit code sent to {formData.email} to finish setting up your account.
+            </Typography>
+          </Box>
 
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Enter the 6-digit OTP sent to {formData.email}.
-        </Typography>
+          {(localError || error) && <Alert severity="error">{localError || error}</Alert>}
+          {successMessage && <Alert severity="success">{successMessage}</Alert>}
 
-        {(localError || error) && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {localError || error}
-          </Alert>
-        )}
+          <TextField
+            required
+            fullWidth
+            id="verificationCode"
+            label="Verification code"
+            name="verificationCode"
+            placeholder="123456"
+            value={verificationCode}
+            onChange={handleVerificationCodeChange}
+            error={!!validationErrors.verificationCode}
+            helperText={validationErrors.verificationCode}
+            disabled={isLoading}
+            autoFocus
+          />
 
-        {successMessage && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            {successMessage}
-          </Alert>
-        )}
+          <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading}>
+            {isLoading ? <CircularProgress size={20} color="inherit" /> : 'Verify and continue'}
+          </Button>
 
-        <TextField
-          margin="normal"
-          required
-          fullWidth
-          id="verificationCode"
-          label="OTP Code"
-          name="verificationCode"
-          value={verificationCode}
-          onChange={handleVerificationCodeChange}
-          error={!!validationErrors.verificationCode}
-          helperText={validationErrors.verificationCode}
-          disabled={isLoading}
-          autoFocus
-        />
-
-        <Button
-          type="submit"
-          fullWidth
-          variant="contained"
-          sx={{ mt: 3, mb: 2 }}
-          disabled={isLoading}
-        >
-          {isLoading ? <CircularProgress size={24} /> : 'Verify OTP'}
-        </Button>
-
-        <Box sx={{ textAlign: 'center', mt: 2 }}>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={(e) => {
-              e.preventDefault();
-              onLoginClick?.();
-            }}
-            sx={{ cursor: 'pointer' }}
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1.5}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
           >
-            Back to Login
-          </Link>
-        </Box>
+            <Link
+              component="button"
+              variant="body2"
+              onClick={(event) => {
+                event.preventDefault();
+                setIsVerificationStep(false);
+                setVerificationCode('');
+                setValidationErrors({});
+                clearMessages();
+              }}
+              sx={{ cursor: 'pointer' }}
+            >
+              Back to registration
+            </Link>
+            <Link
+              component="button"
+              variant="body2"
+              onClick={(event) => {
+                event.preventDefault();
+                onLoginClick?.();
+              }}
+              sx={{ cursor: 'pointer' }}
+            >
+              Back to login
+            </Link>
+          </Stack>
+        </Stack>
       </Box>
     );
   }
 
   return (
     <Box component="form" onSubmit={handleRegisterSubmit} noValidate>
-      <Typography variant="h5" component="h1" gutterBottom>
-        Register
-      </Typography>
+      <Stack spacing={2.5}>
+        <Box>
+          <Typography variant="overline" color="primary.main">
+            Create account
+          </Typography>
+          <Typography variant="h4" sx={{ mt: 0.5, mb: 1 }}>
+            Start with the role that fits you
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Students can start learning right away. Instructors can create content after approval.
+          </Typography>
+        </Box>
 
-      {(localError || error) && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {localError || error}
-        </Alert>
-      )}
+        {(localError || error) && <Alert severity="error">{localError || error}</Alert>}
+        {successMessage && <Alert severity="success">{successMessage}</Alert>}
 
-      {successMessage && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          {successMessage}
-        </Alert>
-      )}
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <TextField
+            required
+            fullWidth
+            id="firstName"
+            label="First name"
+            name="firstName"
+            autoComplete="given-name"
+            autoFocus
+            value={formData.firstName}
+            onChange={handleChange}
+            error={!!validationErrors.firstName}
+            helperText={validationErrors.firstName}
+            disabled={isLoading}
+          />
+          <TextField
+            required
+            fullWidth
+            id="lastName"
+            label="Last name"
+            name="lastName"
+            autoComplete="family-name"
+            value={formData.lastName}
+            onChange={handleChange}
+            error={!!validationErrors.lastName}
+            helperText={validationErrors.lastName}
+            disabled={isLoading}
+          />
+        </Stack>
 
-      <TextField
-        margin="normal"
-        required
-        fullWidth
-        id="firstName"
-        label="First Name"
-        name="firstName"
-        autoComplete="given-name"
-        autoFocus
-        value={formData.firstName}
-        onChange={handleChange}
-        error={!!validationErrors.firstName}
-        helperText={validationErrors.firstName}
-        disabled={isLoading}
-      />
-
-      <TextField
-        margin="normal"
-        required
-        fullWidth
-        id="lastName"
-        label="Last Name"
-        name="lastName"
-        autoComplete="family-name"
-        value={formData.lastName}
-        onChange={handleChange}
-        error={!!validationErrors.lastName}
-        helperText={validationErrors.lastName}
-        disabled={isLoading}
-      />
-
-      <TextField
-        margin="normal"
-        required
-        fullWidth
-        id="email"
-        label="Email Address"
-        name="email"
-        autoComplete="email"
-        value={formData.email}
-        onChange={handleChange}
-        error={!!validationErrors.email}
-        helperText={validationErrors.email}
-        disabled={isLoading}
-      />
-
-      <FormControl fullWidth margin="normal" error={!!validationErrors.role}>
-        <InputLabel id="role-label">Role</InputLabel>
-        <Select
-          labelId="role-label"
-          id="role"
-          name="role"
-          value={formData.role}
-          label="Role"
+        <TextField
+          required
+          fullWidth
+          id="email"
+          label="Email address"
+          name="email"
+          placeholder="name@example.com"
+          autoComplete="email"
+          value={formData.email}
           onChange={handleChange}
+          error={!!validationErrors.email}
+          helperText={validationErrors.email}
           disabled={isLoading}
-        >
-          <MenuItem value="student">Student</MenuItem>
-          <MenuItem value="instructor">Instructor</MenuItem>
-        </Select>
-        {validationErrors.role && <FormHelperText>{validationErrors.role}</FormHelperText>}
-      </FormControl>
+        />
 
-      <TextField
-        margin="normal"
-        required
-        fullWidth
-        name="password"
-        label="Password"
-        type="password"
-        id="password"
-        autoComplete="new-password"
-        value={formData.password}
-        onChange={handleChange}
-        error={!!validationErrors.password}
-        helperText={validationErrors.password}
-        disabled={isLoading}
-      />
+        <FormControl fullWidth error={!!validationErrors.role} disabled={isLoading}>
+          <InputLabel id="role-label">I am joining as</InputLabel>
+          <Select
+            labelId="role-label"
+            id="role"
+            name="role"
+            value={formData.role}
+            label="I am joining as"
+            onChange={handleRoleChange}
+          >
+            <MenuItem value="student">Student</MenuItem>
+            <MenuItem value="instructor">Instructor</MenuItem>
+          </Select>
+          <FormHelperText>
+            {validationErrors.role ||
+              (formData.role === 'instructor'
+                ? 'Instructor accounts may require approval before teaching tools are unlocked.'
+                : 'Student accounts can browse and enroll in courses after signup.')}
+          </FormHelperText>
+        </FormControl>
 
-      <TextField
-        margin="normal"
-        required
-        fullWidth
-        name="confirmPassword"
-        label="Confirm Password"
-        type="password"
-        id="confirmPassword"
-        autoComplete="new-password"
-        value={confirmPassword}
-        onChange={handleConfirmPasswordChange}
-        error={!!validationErrors.confirmPassword}
-        helperText={validationErrors.confirmPassword}
-        disabled={isLoading}
-      />
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <TextField
+            required
+            fullWidth
+            name="password"
+            label="Password"
+            type="password"
+            id="password"
+            placeholder="Create a strong password"
+            autoComplete="new-password"
+            value={formData.password}
+            onChange={handleChange}
+            error={!!validationErrors.password}
+            helperText={validationErrors.password}
+            disabled={isLoading}
+          />
+          <TextField
+            required
+            fullWidth
+            name="confirmPassword"
+            label="Confirm password"
+            type="password"
+            id="confirmPassword"
+            placeholder="Re-enter your password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={handleConfirmPasswordChange}
+            error={!!validationErrors.confirmPassword}
+            helperText={validationErrors.confirmPassword}
+            disabled={isLoading}
+          />
+        </Stack>
 
-      <Button
-        type="submit"
-        fullWidth
-        variant="contained"
-        sx={{ mt: 3, mb: 2 }}
-        disabled={isLoading}
-      >
-        {isLoading ? <CircularProgress size={24} /> : 'Register'}
-      </Button>
+        <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading}>
+          {isLoading ? <CircularProgress size={20} color="inherit" /> : 'Create account'}
+        </Button>
 
-      <Box sx={{ textAlign: 'center', mt: 2 }}>
+        <Typography variant="caption" color="text.secondary">
+          By continuing, you will verify your email before accessing the platform.
+        </Typography>
+
         <Link
           component="button"
           variant="body2"
-          onClick={(e) => {
-            e.preventDefault();
+          onClick={(event) => {
+            event.preventDefault();
             onLoginClick?.();
           }}
-          sx={{ cursor: 'pointer' }}
+          sx={{ cursor: 'pointer', alignSelf: 'flex-start' }}
         >
-          Already have an account? Login
+          Already have an account? Sign in
         </Link>
-      </Box>
+      </Stack>
     </Box>
   );
 };

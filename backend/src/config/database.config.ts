@@ -33,6 +33,11 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 let isConnecting = false;
 let connectionAttempts = 0;
 
+function shouldUseTls(connectionString: string): boolean {
+  const normalized = connectionString.trim().toLowerCase();
+  return normalized.startsWith('mongodb+srv://') || normalized.includes('.mongodb.net');
+}
+
 /**
  * Calculates exponential backoff delay
  * @param attempt - Current attempt number (0-indexed)
@@ -69,6 +74,8 @@ export async function connectDatabase(
   isConnecting = true;
 
   try {
+    const useTls = shouldUseTls(env.DATABASE_URL);
+
     // Configure Mongoose connection options
     const options: mongoose.ConnectOptions = {
       // Connection pool configuration (Requirements 2.1.3)
@@ -89,14 +96,15 @@ export async function connectDatabase(
       // Write concern
       w: 'majority',
 
-      // TLS compatibility for Node.js v24 + OpenSSL 3.5
-      tls: true,
-      tlsAllowInvalidCertificates: env.NODE_ENV !== 'production',
+      // Atlas / SRV connections should use TLS, but plain local MongoDB should not.
+      tls: useTls,
+      tlsAllowInvalidCertificates: useTls && env.NODE_ENV !== 'production',
     };
 
     console.log('🔌 Connecting to MongoDB...');
     console.log(`   Environment: ${env.NODE_ENV}`);
     console.log(`   Database: ${getDatabaseName(env.DATABASE_URL)}`);
+    console.log(`   TLS: ${useTls ? 'enabled' : 'disabled'}`);
 
     await mongoose.connect(env.DATABASE_URL, options);
 

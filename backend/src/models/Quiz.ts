@@ -11,6 +11,7 @@ export enum QuestionType {
 // Interfaces
 export interface IQuestion {
   _id: mongoose.Types.ObjectId;
+  questionBankItemId?: mongoose.Types.ObjectId;
   type: QuestionType;
   text: string;
   options: string[];
@@ -28,6 +29,8 @@ export interface IQuiz extends Document {
   duration: number;
   passingScore: number;
   maxAttempts: number;
+  shuffleQuestions: boolean;
+  shuffleOptions: boolean;
   isPublished: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -41,6 +44,10 @@ export interface IQuizModel extends Model<IQuiz> {
 // Question subdocument schema
 const QuestionSchema = new Schema<IQuestion>(
   {
+    questionBankItemId: {
+      type: Schema.Types.ObjectId,
+      ref: 'QuestionBankItem',
+    },
     type: {
       type: String,
       enum: {
@@ -167,6 +174,14 @@ const QuizSchema = new Schema<IQuiz>(
       required: [true, 'Maximum attempts is required'],
       min: [1, 'Maximum attempts must be at least 1'],
       max: [10, 'Maximum attempts cannot exceed 10'],
+    },
+    shuffleQuestions: {
+      type: Boolean,
+      default: false,
+    },
+    shuffleOptions: {
+      type: Boolean,
+      default: false,
     },
     isPublished: {
       type: Boolean,

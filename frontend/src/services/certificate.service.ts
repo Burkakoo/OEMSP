@@ -38,12 +38,18 @@ const normalizeCertificate = (raw: any): Certificate => ({
   enrollmentId: extractId(raw?.enrollmentId),
   studentId: extractId(raw?.studentId),
   courseId: extractId(raw?.courseId),
+  certificateId: String(raw?.certificateId ?? ''),
   studentName: String(raw?.studentName ?? ''),
   courseTitle: String(raw?.courseTitle ?? 'Course'),
   instructorName: String(raw?.instructorName ?? ''),
   completionDate: String(raw?.completionDate ?? new Date().toISOString()),
   verificationCode: String(raw?.verificationCode ?? ''),
   certificateUrl: String(raw?.certificateUrl ?? ''),
+  publicVerificationUrl: raw?.publicVerificationUrl
+    ? String(raw.publicVerificationUrl)
+    : undefined,
+  templateName: raw?.templateName ? String(raw.templateName) : undefined,
+  skillsAwarded: Array.isArray(raw?.skillsAwarded) ? raw.skillsAwarded.map(String) : [],
   issuedAt: String(raw?.issuedAt ?? raw?.createdAt ?? new Date().toISOString()),
 });
 
@@ -145,5 +151,15 @@ export const certificateService = {
     anchor.click();
     anchor.remove();
     window.URL.revokeObjectURL(url);
+  },
+
+  getPublicCertificate: async (certificateId: string): Promise<CertificateResponse> => {
+    const response = await apiRequest<any>(`/certificates/public/${certificateId}`);
+
+    return {
+      success: Boolean(response?.success),
+      data: normalizeCertificate(response?.data),
+      message: response?.message,
+    };
   },
 };

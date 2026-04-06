@@ -1,12 +1,12 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
+import {
+  Permission,
+  PermissionMode,
+  UserRole,
+} from '../authorization/permissions';
 
-// Enums
-export enum UserRole {
-  STUDENT = 'student',
-  INSTRUCTOR = 'instructor',
-  ADMIN = 'admin',
-}
+export { Permission, PermissionMode, UserRole } from '../authorization/permissions';
 
 // Interfaces
 export interface IAddress {
@@ -39,6 +39,8 @@ export interface IUser extends Document {
   firstName: string;
   lastName: string;
   role: UserRole;
+  permissionMode: PermissionMode;
+  customPermissions: Permission[];
   profile: IUserProfile;
   isActive: boolean;
   isEmailVerified: boolean;
@@ -166,6 +168,26 @@ const UserSchema = new Schema<IUser>(
       },
       required: [true, 'Role is required'],
       default: UserRole.STUDENT,
+    },
+    permissionMode: {
+      type: String,
+      enum: {
+        values: Object.values(PermissionMode),
+        message: '{VALUE} is not a valid permission mode',
+      },
+      default: PermissionMode.INHERIT,
+    },
+    customPermissions: {
+      type: [
+        {
+          type: String,
+          enum: {
+            values: Object.values(Permission),
+            message: '{VALUE} is not a valid permission',
+          },
+        },
+      ],
+      default: [],
     },
     profile: {
       type: UserProfileSchema,

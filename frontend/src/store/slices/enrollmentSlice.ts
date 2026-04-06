@@ -40,9 +40,12 @@ export const fetchEnrollment = createAsyncThunk(
 
 export const createEnrollment = createAsyncThunk(
   'enrollments/createEnrollment',
-  async (courseId: string, { rejectWithValue }) => {
+  async (
+    { courseId, paymentId }: { courseId: string; paymentId: string },
+    { rejectWithValue }
+  ) => {
     try {
-      const response = await enrollmentService.createEnrollment(courseId);
+      const response = await enrollmentService.createEnrollment(courseId, paymentId);
       return response.data;
     } catch (error) {
       return rejectWithValue((error as Error).message);
@@ -59,6 +62,18 @@ export const updateProgress = createAsyncThunk(
     try {
       const response = await enrollmentService.updateProgress(enrollmentId, data);
       return response.data;
+    } catch (error) {
+      return rejectWithValue((error as Error).message);
+    }
+  }
+);
+
+export const deleteEnrollment = createAsyncThunk(
+  'enrollments/deleteEnrollment',
+  async (enrollmentId: string, { rejectWithValue }) => {
+    try {
+      await enrollmentService.deleteEnrollment(enrollmentId);
+      return enrollmentId;
     } catch (error) {
       return rejectWithValue((error as Error).message);
     }
@@ -140,6 +155,23 @@ const enrollmentSlice = createSlice({
         }
       })
       .addCase(updateProgress.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+
+      // Delete enrollment
+      .addCase(deleteEnrollment.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(deleteEnrollment.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.enrollments = state.enrollments.filter((e) => e._id !== action.payload);
+        if (state.currentEnrollment?._id === action.payload) {
+          state.currentEnrollment = null;
+        }
+      })
+      .addCase(deleteEnrollment.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       });

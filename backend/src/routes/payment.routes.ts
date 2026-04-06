@@ -10,6 +10,13 @@ const router = Router();
  */
 
 /**
+ * @route   POST /api/v1/payments/quote
+ * @desc    Generate a pricing quote for a course purchase
+ * @access  Private (Authenticated users)
+ */
+router.post('/quote', authenticate, paymentController.getPaymentQuote);
+
+/**
  * @route   POST /api/v1/payments/process
  * @desc    Process a payment for a course
  * @access  Private (Authenticated users)

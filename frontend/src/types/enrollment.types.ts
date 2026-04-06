@@ -12,6 +12,12 @@ export interface LessonProgress {
 export interface Enrollment {
   _id: string;
   studentId: string;
+  student?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+  };
   courseId: string;
   course?: {
     _id: string;

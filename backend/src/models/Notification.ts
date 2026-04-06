@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
+import { NotificationChannel, NotificationTrigger } from './NotificationPreference';
 
 // Enums
 export enum NotificationType {
@@ -8,6 +9,11 @@ export enum NotificationType {
   CERTIFICATE_ISSUED = 'certificate_issued',
   PAYMENT_SUCCESS = 'payment_success',
   PAYMENT_FAILED = 'payment_failed',
+  PAYMENT_REFUNDED = 'payment_refunded',
+  DISCUSSION_REPLY = 'discussion_reply',
+  NEW_CONTENT = 'new_content',
+  DEADLINE_MISSED = 'deadline_missed',
+  DEADLINE_REMINDER = 'deadline_reminder',
   SYSTEM = 'system',
 }
 
@@ -18,6 +24,9 @@ export interface INotification extends Document {
   title: string;
   message: string;
   data?: any;
+  channels: NotificationChannel[];
+  trigger?: NotificationTrigger;
+  isVisibleInApp: boolean;
   isRead: boolean;
   createdAt: Date;
   readAt?: Date;
@@ -62,6 +71,26 @@ const NotificationSchema = new Schema<INotification>(
     data: {
       type: Schema.Types.Mixed,
     },
+    channels: {
+      type: [String],
+      enum: {
+        values: Object.values(NotificationChannel),
+        message: '{VALUE} is not a valid notification channel',
+      },
+      default: [NotificationChannel.IN_APP],
+    },
+    trigger: {
+      type: String,
+      enum: {
+        values: Object.values(NotificationTrigger),
+        message: '{VALUE} is not a valid notification trigger',
+      },
+    },
+    isVisibleInApp: {
+      type: Boolean,
+      default: true,
+      required: [true, 'Visibility status is required'],
+    },
     isRead: {
       type: Boolean,
       default: false,
@@ -94,6 +123,7 @@ NotificationSchema.index({ userId: 1 });
 
 // Non-unique index on isRead for filtering read/unread notifications
 NotificationSchema.index({ isRead: 1 });
+NotificationSchema.index({ isVisibleInApp: 1 });
 
 // Descending index on createdAt for sorting (newest first)
 NotificationSchema.index({ createdAt: -1 });
@@ -101,6 +131,7 @@ NotificationSchema.index({ createdAt: -1 });
 // Compound index for efficient queries (userId, isRead, createdAt)
 // This supports queries like: "Get all unread notifications for user X, sorted by date"
 NotificationSchema.index({ userId: 1, isRead: 1, createdAt: -1 });
+NotificationSchema.index({ userId: 1, isVisibleInApp: 1, createdAt: -1 });
 
 // Pre-save hook to set readAt timestamp when isRead changes to true
 NotificationSchema.pre<INotification>('save', function () {

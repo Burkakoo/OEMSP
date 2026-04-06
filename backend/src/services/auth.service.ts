@@ -4,10 +4,16 @@
  */
 
 import jwt from 'jsonwebtoken';
-import User, { IUser, UserRole } from '../models/User';
+import User, { IUser } from '../models/User';
 import { env } from '../config/env.config';
 import * as redis from '../config/redis.config';
 import { sendTemplateEmail } from './email.service';
+import {
+  Permission,
+  PermissionMode,
+  UserRole,
+  resolvePermissions,
+} from '../authorization/permissions';
 
 // DTOs and Interfaces
 export interface RegisterDTO {
@@ -41,12 +47,16 @@ export interface UserProfile {
   lastName: string;
   role: UserRole;
   isApproved: boolean;
+  permissionMode: PermissionMode;
+  permissions: Permission[];
 }
 
 export interface TokenPayload {
   userId: string;
   email: string;
   role: UserRole;
+  permissions?: Permission[];
+  permissionMode?: PermissionMode;
   iat: number;
   exp: number;
 }
@@ -702,6 +712,12 @@ class AuthService implements IAuthService {
       lastName: user.lastName,
       role: user.role,
       isApproved: user.isApproved,
+      permissionMode: user.permissionMode ?? PermissionMode.INHERIT,
+      permissions: resolvePermissions({
+        role: user.role,
+        permissionMode: user.permissionMode,
+        customPermissions: user.customPermissions,
+      }),
     };
   }
 

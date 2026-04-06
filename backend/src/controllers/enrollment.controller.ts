@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
+import Course from '../models/Course';
 import * as enrollmentService from '../services/enrollment.service';
 
 const extractId = (value: any): string => {
@@ -40,7 +41,8 @@ export const listEnrollments = async (req: AuthRequest, res: Response): Promise<
         filters.courseId = courseId as string;
       }
     } else if (req.user?.role === 'instructor') {
-      // Instructors can filter by their courses
+      filters.instructorId = req.user.userId;
+      // Instructors can filter by their own courses
       if (courseId) {
         filters.courseId = courseId as string;
       }
@@ -99,6 +101,20 @@ export const getEnrollment = async (req: AuthRequest, res: Response): Promise<vo
     if (req.user?.role === 'student') {
       const enrollmentStudentId = extractId(enrollment.studentId);
       if (enrollmentStudentId !== req.user.userId) {
+        res.status(403).json({
+          success: false,
+          message: 'Access denied',
+        });
+        return;
+      }
+    } else if (req.user?.role === 'instructor') {
+      const enrollmentCourse = enrollment.courseId as any;
+      const instructorId =
+        enrollmentCourse?.instructorId?.toString?.() ??
+        enrollmentCourse?.instructorId?._id?.toString?.() ??
+        '';
+
+      if (instructorId !== req.user.userId) {
         res.status(403).json({
           success: false,
           message: 'Access denied',
@@ -315,6 +331,10 @@ export const getCourseEnrollments = async (req: AuthRequest, res: Response): Pro
       limit: limit ? parseInt(limit as string) : 10,
     };
 
+    if (req.user?.role === 'instructor') {
+      filters.instructorId = req.user.userId;
+    }
+
     const result = await enrollmentService.listEnrollments(filters);
 
     res.status(200).json({
@@ -325,6 +345,74 @@ export const getCourseEnrollments = async (req: AuthRequest, res: Response): Pro
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to get course enrollments',
+    });
+  }
+};
+
+/**
+ * Delete enrollment
+ * DELETE /api/v1/enrollments/:id
+ */
+export const deleteEnrollment = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const requesterId = req.user?.userId;
+    const requesterRole = req.user?.role;
+
+    if (!requesterId || !requesterRole) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    const enrollment = await enrollmentService.getEnrollment(id as string);
+    if (!enrollment) {
+      res.status(404).json({
+        success: false,
+        message: 'Enrollment not found',
+      });
+      return;
+    }
+
+    if (requesterRole === 'student') {
+      const enrollmentStudentId = extractId(enrollment.studentId);
+      if (enrollmentStudentId !== requesterId) {
+        res.status(403).json({
+          success: false,
+          message: 'Access denied',
+        });
+        return;
+      }
+    } else if (requesterRole === 'instructor') {
+      const enrollmentCourseId = extractId(enrollment.courseId);
+      const course = await Course.findById(enrollmentCourseId).select('instructorId');
+
+      if (!course || course.instructorId.toString() !== requesterId) {
+        res.status(403).json({
+          success: false,
+          message: 'Access denied',
+        });
+        return;
+      }
+    }
+
+    await enrollmentService.deleteEnrollment(id as string);
+
+    res.status(200).json({
+      success: true,
+      message: 'Enrollment removed successfully',
+    });
+  } catch (error: any) {
+    const statusCode =
+      error.message.includes('not found') ? 404 :
+      error.message.includes('Access denied') ? 403 :
+      400;
+
+    res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to delete enrollment',
     });
   }
 };

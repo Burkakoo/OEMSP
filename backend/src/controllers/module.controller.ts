@@ -317,6 +317,8 @@ export const addLesson = async (req: AuthRequest, res: Response): Promise<void> 
       videoUrl: req.body.videoUrl,
       duration: req.body.duration,
       order: req.body.order,
+      isDripEnabled: req.body.isDripEnabled,
+      dripDelayDays: req.body.dripDelayDays,
       resources: req.body.resources,
     };
 
@@ -416,6 +418,8 @@ export const updateLesson = async (req: AuthRequest, res: Response): Promise<voi
       videoUrl: req.body.videoUrl,
       duration: req.body.duration,
       order: req.body.order,
+      isDripEnabled: req.body.isDripEnabled,
+      dripDelayDays: req.body.dripDelayDays,
       resources: req.body.resources,
     };
 

@@ -8,23 +8,39 @@ import PublicFooter from '@components/layout/PublicFooter';
 const PublicLayout: React.FC = () => {
   return (
     <Box
-      sx={{
+      sx={(theme) => ({
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'background.default',
-        backgroundImage: (theme) =>
-          `radial-gradient(900px 360px at 10% -10%, ${alpha(
-            theme.palette.primary.main,
-            0.14
-          )} 0%, rgba(0,0,0,0) 55%), radial-gradient(900px 360px at 90% 0%, ${alpha(
-            theme.palette.secondary.main,
-            0.12
-          )} 0%, rgba(0,0,0,0) 55%)`,
-      }}
+        position: 'relative',
+        overflow: 'hidden',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          inset: '-20% auto auto -12%',
+          width: 340,
+          height: 340,
+          borderRadius: '50%',
+          background: alpha(theme.palette.primary.main, 0.12),
+          filter: 'blur(40px)',
+          pointerEvents: 'none',
+        },
+        '&::after': {
+          content: '""',
+          position: 'absolute',
+          inset: '80px -12% auto auto',
+          width: 320,
+          height: 320,
+          borderRadius: '50%',
+          background: alpha(theme.palette.secondary.main, 0.1),
+          filter: 'blur(42px)',
+          pointerEvents: 'none',
+        },
+      })}
     >
       <PublicHeader />
-      <Box component="main" sx={{ flexGrow: 1 }}>
+      <Box component="main" sx={{ flexGrow: 1, position: 'relative', zIndex: 1 }}>
         <Outlet />
       </Box>
       <PublicFooter />

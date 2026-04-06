@@ -1,7 +1,12 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import * as paymentService from '../services/payment.service';
-import { PaymentMethod, PaymentStatus, ETHIOPIAN_MOBILE_PAYMENT_METHODS } from '../models/Payment';
+import {
+  PaymentMethod,
+  PaymentStatus,
+  ETHIOPIAN_MOBILE_PAYMENT_METHODS,
+  MOBILE_PAYMENT_METHODS,
+} from '../models/Payment';
 
 /**
  * Payment Controllers
@@ -9,12 +14,50 @@ import { PaymentMethod, PaymentStatus, ETHIOPIAN_MOBILE_PAYMENT_METHODS } from '
  */
 
 /**
+ * Get a pricing quote for a course checkout
+ * POST /api/v1/payments/quote
+ */
+export const getPaymentQuote = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { courseId, couponCode } = req.body;
+
+    if (!courseId) {
+      res.status(400).json({
+        success: false,
+        message: 'Course ID is required',
+      });
+      return;
+    }
+
+    const quote = await paymentService.getPaymentQuote({
+      courseId,
+      couponCode,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: quote,
+    });
+  } catch (error: any) {
+    const statusCode =
+      error.message.includes('not found') ? 404 :
+      error.message.includes('Invalid') ? 400 :
+      400;
+
+    res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Failed to generate pricing quote',
+    });
+  }
+};
+
+/**
  * Process payment
  * POST /api/v1/payments/process
  */
 export const processPayment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { courseId, amount, currency, paymentMethod, phoneNumber } = req.body;
+    const { courseId, amount, currency, paymentMethod, phoneNumber, couponCode } = req.body;
 
     // Validation
     if (!courseId) {
@@ -25,7 +68,7 @@ export const processPayment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    if (!amount || amount <= 0) {
+    if (amount === undefined || amount < 0) {
       res.status(400).json({
         success: false,
         message: 'Valid amount is required',
@@ -41,7 +84,7 @@ export const processPayment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    if (!paymentMethod) {
+    if (!paymentMethod && amount > 0) {
       res.status(400).json({
         success: false,
         message: 'Payment method is required',
@@ -50,7 +93,7 @@ export const processPayment = async (req: AuthRequest, res: Response): Promise<v
     }
 
     // Validate payment method
-    if (!Object.values(PaymentMethod).includes(paymentMethod)) {
+    if (paymentMethod && !Object.values(PaymentMethod).includes(paymentMethod)) {
       res.status(400).json({
         success: false,
         message: 'Invalid payment method',
@@ -58,8 +101,8 @@ export const processPayment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    // Validate phone number for Ethiopian mobile payments
-    if (ETHIOPIAN_MOBILE_PAYMENT_METHODS.includes(paymentMethod)) {
+    // Validate phone number for mobile-money payments
+    if (paymentMethod && MOBILE_PAYMENT_METHODS.includes(paymentMethod)) {
       if (!phoneNumber) {
         res.status(400).json({
           success: false,
@@ -68,12 +111,16 @@ export const processPayment = async (req: AuthRequest, res: Response): Promise<v
         return;
       }
 
-      // Validate Ethiopian phone number format
-      const phoneRegex = /^\+251\d{9}$/;
+      const phoneRegex = ETHIOPIAN_MOBILE_PAYMENT_METHODS.includes(paymentMethod)
+        ? /^\+251\d{9}$/
+        : /^\+[1-9]\d{7,14}$/;
+
       if (!phoneRegex.test(phoneNumber)) {
         res.status(400).json({
           success: false,
-          message: 'Invalid Ethiopian phone number format. Must be +251XXXXXXXXX',
+          message: ETHIOPIAN_MOBILE_PAYMENT_METHODS.includes(paymentMethod)
+            ? 'Invalid Ethiopian phone number format. Must be +251XXXXXXXXX'
+            : 'Invalid phone number format. Use an international number like +254700000000',
         });
         return;
       }
@@ -101,6 +148,7 @@ export const processPayment = async (req: AuthRequest, res: Response): Promise<v
       amount,
       currency: currency.toUpperCase(),
       paymentMethod,
+      couponCode,
       phoneNumber,
       ipAddress,
       userAgent,
@@ -113,6 +161,7 @@ export const processPayment = async (req: AuthRequest, res: Response): Promise<v
   } catch (error: any) {
     const statusCode = error.message.includes('not found') ? 404 :
                        error.message.includes('already completed') ? 409 :
+                       error.message.includes('already enrolled') ? 409 :
                        error.message.includes('does not match') ? 400 : 400;
 
     res.status(statusCode).json({
@@ -282,6 +331,7 @@ export const getPaymentStatistics = async (req: AuthRequest, res: Response): Pro
 export const refundPayment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const { reason } = req.body || {};
 
     // Only admins can refund payments
     if (req.user?.role !== 'admin') {
@@ -292,7 +342,11 @@ export const refundPayment = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const payment = await paymentService.refundPayment(id as string, req.user.userId);
+    const payment = await paymentService.refundPayment(
+      id as string,
+      req.user.userId,
+      reason
+    );
 
     res.status(200).json({
       success: true,

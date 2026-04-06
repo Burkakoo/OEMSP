@@ -13,9 +13,18 @@ export interface Lesson {
   order: number;
   resources?: Array<{ title: string; url: string; type: string }>;
   attachments?: Attachment[];
+  isDripEnabled: boolean;
+  dripDelayDays: number;
 }
 
 export type LessonType = 'video' | 'text' | 'quiz' | 'assignment';
+export type DiscountType = 'percentage' | 'fixed';
+export type CourseCurrency = 'ETB' | 'USD' | 'EUR';
+export type CourseReviewStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'approved'
+  | 'changes_requested';
 
 export interface Attachment {
   _id: string;
@@ -47,13 +56,27 @@ export interface Course {
   category: string;
   level: 'beginner' | 'intermediate' | 'advanced';
   price: number;
-  currency: string;
+  currency: CourseCurrency;
   isFree?: boolean;
+  saleEnabled: boolean;
+  saleType?: DiscountType;
+  saleValue: number;
+  saleStartsAt?: string;
+  saleEndsAt?: string;
+  currentPrice: number;
+  hasActiveSale: boolean;
+  saleDiscountAmount: number;
   thumbnail?: string;
   isPublished: boolean;
   modules: Module[];
   enrollmentCount: number;
+  prerequisites?: string[];
+  learningObjectives?: string[];
   rating?: number;
+  reviewStatus?: CourseReviewStatus;
+  reviewNotes?: string;
+  submittedForReviewAt?: string;
+  reviewedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,6 +87,7 @@ export interface CourseFilters {
   minPrice?: number;
   maxPrice?: number;
   search?: string;
+  reviewStatus?: CourseReviewStatus;
   instructorId?: string;
 }
 
@@ -88,7 +112,12 @@ export interface CreateCourseData {
   level: 'beginner' | 'intermediate' | 'advanced';
   price: number;
   isFree?: boolean;
-  currency?: string;
+  currency?: CourseCurrency;
+  saleEnabled?: boolean;
+  saleType?: DiscountType;
+  saleValue?: number;
+  saleStartsAt?: string;
+  saleEndsAt?: string;
   thumbnail?: string;
 }
 
@@ -110,4 +139,6 @@ export interface CreateLessonData {
   videoUrl?: string;
   duration: number;
   order: number;
+  isDripEnabled?: boolean;
+  dripDelayDays?: number;
 }

@@ -12,6 +12,7 @@ export interface QuizQuestion {
   correctAnswer?: string | string[];
   points: number;
   explanation?: string;
+  questionBankItemId?: string;
 }
 
 export interface QuizCourseRef {
@@ -30,6 +31,8 @@ export interface Quiz {
   duration: number;
   passingScore: number;
   maxAttempts: number;
+  shuffleQuestions?: boolean;
+  shuffleOptions?: boolean;
   isPublished?: boolean;
   createdAt: string;
   updatedAt?: string;

@@ -14,16 +14,21 @@ import ForgotPasswordPage from '@pages/ForgotPasswordPage';
 import PendingApprovalPage from '@pages/PendingApprovalPage';
 import UnauthorizedPage from '@pages/UnauthorizedPage';
 import NotFoundPage from '@pages/NotFoundPage';
+import CertificateVerificationPage from '@pages/CertificateVerificationPage';
 import DashboardPage from '@pages/DashboardPage';
 import StudentDashboardPage from '@pages/StudentDashboardPage';
 import InstructorDashboardPage from './pages/InstructorDashboardPage';
+import InstructorCourseStudentsPage from './pages/InstructorCourseStudentsPage';
 import InstructorCoursesPage from './pages/InstructorCoursesPage';
+import InstructorAssignmentsPage from './pages/InstructorAssignmentsPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import CreateCoursePage from '@pages/CreateCoursePage';
 import EditCoursePage from '@pages/EditCoursePage';
 import CourseCatalogPage from '@pages/CourseCatalogPage';
 import CourseDetailsPage from '@pages/CourseDetailsPage';
 import CoursePlayerPage from '@pages/CoursePlayerPage';
+import CourseDiscussionPage from '@pages/CourseDiscussionPage';
+import CourseQuestionBankPage from '@pages/CourseQuestionBankPage';
 import QuizTakingPage from '@pages/QuizTakingPage';
 import QuizResultsPage from '@pages/QuizResultsPage';
 import CreateQuizPage from '@pages/CreateQuizPage';
@@ -46,6 +51,7 @@ const App: React.FC = () => {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/pending-approval" element={<PendingApprovalPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="/certificates/:certificateId/verify" element={<CertificateVerificationPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
         
@@ -81,6 +87,15 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute requiredRole="student">
               <CoursePlayerPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/courses/:courseId/discussions"
+          element={
+            <ProtectedRoute requiredRole={['student', 'instructor', 'admin']} requireApproval>
+              <CourseDiscussionPage />
             </ProtectedRoute>
           }
         />
@@ -122,6 +137,24 @@ const App: React.FC = () => {
         />
 
         <Route
+          path="/instructor/courses/:courseId/students"
+          element={
+            <ProtectedRoute requiredRole="instructor" requireApproval>
+              <InstructorCourseStudentsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/instructor/assignments"
+          element={
+            <ProtectedRoute requiredRole="instructor" requireApproval>
+              <InstructorAssignmentsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/instructor/courses/create"
           element={
             <ProtectedRoute requiredRole="instructor" requireApproval>
@@ -135,6 +168,15 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute requiredRole="instructor" requireApproval>
               <EditCoursePage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/instructor/courses/:courseId/question-bank"
+          element={
+            <ProtectedRoute requiredRole="instructor" requireApproval>
+              <CourseQuestionBankPage />
             </ProtectedRoute>
           }
         />

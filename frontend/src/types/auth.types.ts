@@ -9,6 +9,9 @@ export interface User {
   lastName: string;
   role: 'student' | 'instructor' | 'admin';
   isApproved?: boolean;
+  permissionMode?: 'inherit' | 'override';
+  customPermissions?: string[];
+  permissions?: string[];
   profilePicture?: string;
   bio?: string;
   createdAt: string;

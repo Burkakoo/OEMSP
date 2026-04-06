@@ -14,17 +14,29 @@ import {
   CircularProgress,
   Button,
   Alert,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
 } from '@mui/material';
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import { useAppDispatch, useAppSelector } from '../hooks/useAppDispatch';
-import { fetchEnrollments } from '../store/slices/enrollmentSlice';
+import { fetchEnrollments, deleteEnrollment as deleteEnrollmentAction } from '../store/slices/enrollmentSlice';
+import { logout as logoutAction } from '../store/slices/authSlice';
 import EnrolledCourseCard from '../components/student/EnrolledCourseCard';
 import StudentStats from '../components/student/StudentStats';
 import CertificateList from '../components/student/CertificateList';
+import NotificationPreferencesPanel from '../components/student/NotificationPreferencesPanel';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { quizService } from '../services/quiz.service';
 import { Quiz } from '../types/quiz.types';
 import { Certificate } from '../types/certificate.types';
 import { certificateService } from '../services/certificate.service';
+import notificationPreferenceService, {
+  NotificationPreferences,
+} from '@/services/notificationPreference.service';
+import { useLocalization } from '@/context/LocalizationContext';
 
 const toCertificateFileName = (courseTitle: string): string =>
   `${courseTitle
@@ -38,6 +50,7 @@ const StudentDashboardPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const { enrollments, isLoading } = useAppSelector((state) => state.enrollments);
   const { user } = useAppSelector((state) => state.auth);
+  const { t } = useLocalization();
 
   const [tabValue, setTabValue] = useState(0);
   const [quizzesByCourse, setQuizzesByCourse] = useState<Record<string, Quiz[]>>({});
@@ -46,6 +59,15 @@ const StudentDashboardPage: React.FC = () => {
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [isLoadingCertificates, setIsLoadingCertificates] = useState(false);
   const [certificateError, setCertificateError] = useState<string | null>(null);
+  const [unenrollTargetId, setUnenrollTargetId] = useState<string | null>(null);
+  const [unenrollError, setUnenrollError] = useState<string | null>(null);
+  const [isUnenrolling, setIsUnenrolling] = useState(false);
+  const [notificationPreferences, setNotificationPreferences] =
+    useState<NotificationPreferences | null>(null);
+  const [notificationPreferenceError, setNotificationPreferenceError] = useState<string | null>(
+    null
+  );
+  const [isSavingNotificationPreferences, setIsSavingNotificationPreferences] = useState(false);
 
   const enrolledCourseIds = useMemo(
     () =>
@@ -215,6 +237,31 @@ const StudentDashboardPage: React.FC = () => {
     };
   }, [enrollments, isLoading]);
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadPreferences = async () => {
+      try {
+        const preferences = await notificationPreferenceService.getPreferences();
+        if (!isCancelled) {
+          setNotificationPreferences(preferences);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setNotificationPreferenceError(
+            (error as Error).message || 'Failed to load notification preferences'
+          );
+        }
+      }
+    };
+
+    void loadPreferences();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
@@ -280,6 +327,56 @@ const StudentDashboardPage: React.FC = () => {
     navigate(`/quiz/${quizId}`);
   };
 
+  const handleLogout = async () => {
+    await dispatch(logoutAction());
+    navigate('/login');
+  };
+
+  const handleSaveNotificationPreferences = async (
+    preferences: Partial<NotificationPreferences>
+  ) => {
+    setIsSavingNotificationPreferences(true);
+    setNotificationPreferenceError(null);
+
+    try {
+      const updated = await notificationPreferenceService.updatePreferences(preferences);
+      setNotificationPreferences(updated);
+    } catch (error) {
+      setNotificationPreferenceError(
+        (error as Error).message || 'Failed to update notification preferences'
+      );
+    } finally {
+      setIsSavingNotificationPreferences(false);
+    }
+  };
+
+  const handlePromptUnenroll = (enrollmentId: string) => {
+    setUnenrollTargetId(enrollmentId);
+    setUnenrollError(null);
+  };
+
+  const handleCloseUnenrollDialog = () => {
+    if (isUnenrolling) return;
+    setUnenrollTargetId(null);
+    setUnenrollError(null);
+  };
+
+  const handleConfirmUnenroll = async () => {
+    if (!unenrollTargetId) return;
+
+    setIsUnenrolling(true);
+    setUnenrollError(null);
+
+    try {
+      await dispatch(deleteEnrollmentAction(unenrollTargetId)).unwrap();
+      setUnenrollTargetId(null);
+    } catch (error) {
+      setUnenrollError((error as Error).message || 'Failed to unenroll');
+    } finally {
+      setIsUnenrolling(false);
+    }
+  };
+
   // Calculate statistics
   const totalEnrollments = enrollments.length;
   const completedCourses = enrollments.filter((e) => e.isCompleted).length;
@@ -304,12 +401,30 @@ const StudentDashboardPage: React.FC = () => {
     <DashboardLayout>
       <Container maxWidth="lg">
       <Box sx={{ mt: 4, mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Welcome back, {user?.firstName}!
-        </Typography>
-        <Typography variant="body1" color="text.secondary" paragraph>
-          Track your learning progress and achievements
-        </Typography>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          justifyContent="space-between"
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+          sx={{ mb: 3 }}
+        >
+          <Box>
+            <Typography variant="h4" component="h1" gutterBottom>
+              {t('studentWelcome', { name: user?.firstName || 'Student' })}
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              {t('studentSubtitle')}
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            color="inherit"
+            startIcon={<LogoutRoundedIcon />}
+            onClick={() => void handleLogout()}
+          >
+            {t('logout')}
+          </Button>
+        </Stack>
 
         <Box sx={{ mb: 4 }}>
           <StudentStats
@@ -322,9 +437,10 @@ const StudentDashboardPage: React.FC = () => {
 
         <Paper sx={{ mb: 3 }}>
           <Tabs value={tabValue} onChange={handleTabChange}>
-            <Tab label="My Courses" />
+            <Tab label={t('myCourses')} />
             <Tab label="Certificates" />
             <Tab label="Quizzes" />
+            <Tab label="Notifications" />
           </Tabs>
         </Paper>
 
@@ -346,7 +462,7 @@ const StudentDashboardPage: React.FC = () => {
                   size="large"
                   onClick={() => navigate('/courses')}
                 >
-                  Browse Courses
+                  {t('browseCourses')}
                 </Button>
               </Paper>
             ) : (
@@ -357,6 +473,7 @@ const StudentDashboardPage: React.FC = () => {
                       enrollment={enrollment}
                       onContinue={handleContinueLearning}
                       onViewCertificate={handleViewCertificate}
+                      onUnenroll={handlePromptUnenroll}
                     />
                   </Box>
                 ))}
@@ -447,7 +564,43 @@ const StudentDashboardPage: React.FC = () => {
             )}
           </Box>
         )}
+
+        {tabValue === 3 && (
+          <NotificationPreferencesPanel
+            preferences={notificationPreferences}
+            error={notificationPreferenceError}
+            isSaving={isSavingNotificationPreferences}
+            onSave={handleSaveNotificationPreferences}
+          />
+        )}
       </Box>
+      <Dialog open={Boolean(unenrollTargetId)} onClose={handleCloseUnenrollDialog}>
+        <DialogTitle>Unenroll From Course</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to remove this course from your dashboard? Your learning progress
+            and certificate access for this enrollment will be removed.
+          </Typography>
+          {unenrollError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {unenrollError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseUnenrollDialog} disabled={isUnenrolling}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmUnenroll}
+            color="error"
+            variant="contained"
+            disabled={isUnenrolling}
+          >
+            {isUnenrolling ? 'Removing...' : 'Unenroll'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
     </DashboardLayout>
   );
