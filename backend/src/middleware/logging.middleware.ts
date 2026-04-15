@@ -117,8 +117,8 @@ export const auditLogMiddleware = (req: Request, res: Response, next: any) => {
     const action = `${req.method} ${req.path}`;
     const pathParts = req.path.split('/').filter(Boolean);
     const resource = pathParts[2] || pathParts[0] || 'unknown';
-    const paramId = req.params.id;
-    const resourceId = Array.isArray(paramId) ? paramId[0] : paramId;
+    const paramId = req.params?.id;
+    const resourceId = Array.isArray(paramId) ? paramId[0] : (paramId || 'unknown');
     const ipAddress =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
       req.socket.remoteAddress ||
