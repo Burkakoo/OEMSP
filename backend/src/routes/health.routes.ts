@@ -5,6 +5,7 @@
 
 import { Router, Request, Response } from 'express';
 import { isConnected, getConnectionState, getPoolStats } from '../config/database.config';
+import { getConnectionStats as getRedisConnectionStats } from '../config/redis.config';
 
 const router = Router();
 
@@ -16,6 +17,7 @@ const router = Router();
 router.get('/', (_req: Request, res: Response) => {
   const dbConnected = isConnected();
   const dbState = getConnectionState();
+  const redisStats = getRedisConnectionStats();
 
   const healthStatus = {
     status: dbConnected ? 'healthy' : 'unhealthy',
@@ -24,6 +26,11 @@ router.get('/', (_req: Request, res: Response) => {
     database: {
       connected: dbConnected,
       state: dbState,
+    },
+    cache: {
+      connected: redisStats.isConnected,
+      mode: redisStats.mode,
+      state: redisStats.status,
     },
   };
 
@@ -40,6 +47,7 @@ router.get('/detailed', (_req: Request, res: Response) => {
   const dbConnected = isConnected();
   const dbState = getConnectionState();
   const poolStats = getPoolStats();
+  const redisStats = getRedisConnectionStats();
 
   const detailedHealth = {
     status: dbConnected ? 'healthy' : 'unhealthy',
@@ -60,6 +68,13 @@ router.get('/detailed', (_req: Request, res: Response) => {
       state: dbState,
       host: poolStats.host,
       name: poolStats.name,
+    },
+    cache: {
+      connected: redisStats.isConnected,
+      state: redisStats.status,
+      mode: redisStats.mode,
+      host: redisStats.host,
+      port: redisStats.port,
     },
   };
 

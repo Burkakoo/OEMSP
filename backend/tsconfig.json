@@ -8,10 +8,6 @@
     "module": "commonjs",
     "rootDir": "./src",
     "moduleResolution": "node",
-    "baseUrl": "./src",
-    "paths": {
-      "@/*": ["*"]
-    },
     "resolveJsonModule": true,
     
     /* Emit */

@@ -1,16 +1,24 @@
 /**
  * Email Service
- * Sends transactional emails using Gmail SMTP via Nodemailer.
+ * Sends transactional emails via either Gmail SMTP or Resend HTTP API.
  *
- * Required env vars:
+ * Required env vars for SMTP:
+ * - EMAIL_PROVIDER=smtp
  * - EMAIL_USER: Gmail address
  * - EMAIL_PASS: Gmail App Password (16 chars, no spaces)
+ *
+ * Required env vars for Resend:
+ * - EMAIL_PROVIDER=resend
+ * - RESEND_API_KEY: Resend API key
  *
  * Optional env vars:
  * - EMAIL_FROM: Defaults to EMAIL_USER when omitted
  */
 
-import nodemailer, { type Transporter } from 'nodemailer';
+import axios from 'axios';
+import * as nodemailer from 'nodemailer';
+import { type Transporter } from 'nodemailer';
+import { env } from '../config/env.config';
 
 export interface EmailOptions {
   to: string | string[];
@@ -33,8 +41,8 @@ const getTransporter = (): Transporter => {
     return transporter;
   }
 
-  const emailUser = process.env.EMAIL_USER;
-  const emailPass = process.env.EMAIL_PASS;
+  const emailUser = env.EMAIL_USER;
+  const emailPass = env.EMAIL_PASS;
 
   if (!emailUser || !emailPass) {
     throw new Error('Missing EMAIL_USER or EMAIL_PASS in environment variables');
@@ -49,6 +57,39 @@ const getTransporter = (): Transporter => {
   });
 
   return transporter;
+};
+
+// Export for testing
+export const resetTransporter = (): void => {
+  transporter = null;
+};
+
+const sendViaResend = async (options: EmailOptions): Promise<{ success: boolean; messageId?: string }> => {
+  const resendApiKey = env.RESEND_API_KEY;
+
+  if (!resendApiKey) {
+    throw new Error('Missing RESEND_API_KEY in environment variables');
+  }
+
+  const payload = {
+    from: options.from,
+    to: Array.isArray(options.to) ? options.to : [options.to],
+    subject: options.subject,
+    html: options.html,
+    text: options.text,
+  };
+
+  const response = await axios.post('https://api.resend.com/emails', payload, {
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  return {
+    success: true,
+    messageId: response.data?.id,
+  };
 };
 
 /**
@@ -157,18 +198,27 @@ export const sendEmail = async (options: EmailOptions): Promise<{ success: boole
       throw new Error('Email must have either text or html content');
     }
 
-    const fromAddress = options.from || process.env.EMAIL_FROM || process.env.EMAIL_USER;
+    const fromAddress = options.from || env.EMAIL_FROM || env.EMAIL_USER;
 
     if (!fromAddress) {
       throw new Error('Missing EMAIL_FROM or EMAIL_USER in environment variables');
     }
 
-    const result = await getTransporter().sendMail({
-      to: options.to,
+    const emailOptions = {
+      ...options,
       from: fromAddress,
-      subject: options.subject,
-      text: options.text,
-      html: options.html,
+    };
+
+    if (env.EMAIL_PROVIDER === 'resend') {
+      return await sendViaResend(emailOptions);
+    }
+
+    const result = await getTransporter().sendMail({
+      to: emailOptions.to,
+      from: emailOptions.from,
+      subject: emailOptions.subject,
+      text: emailOptions.text,
+      html: emailOptions.html,
     });
 
     return { success: true, messageId: result.messageId };

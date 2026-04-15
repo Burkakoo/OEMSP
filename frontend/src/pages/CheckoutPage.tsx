@@ -21,7 +21,7 @@ import { fetchCourse, clearCurrentCourse } from '@store/slices/courseSlice';
 import PaymentForm from '../components/payment/PaymentForm';
 import { enrollmentService } from '@/services/enrollment.service';
 import { paymentService } from '@/services/payment.service';
-import { PaymentQuote } from '@/types/payment.types';
+import { Payment, PaymentQuote } from '@/types/payment.types';
 import { useLocalization } from '@/context/LocalizationContext';
 
 const CheckoutPage: React.FC = () => {
@@ -116,8 +116,15 @@ const CheckoutPage: React.FC = () => {
     }
   };
 
-  const handlePaymentSuccess = (paymentId: string) => {
-    navigate(`/payment/success?paymentId=${paymentId}&courseId=${courseId}`);
+  const handlePaymentSuccess = (payment: Payment) => {
+    setError(null);
+
+    if (payment.status === 'pending') {
+      navigate(`/payment/pending?paymentId=${payment._id}&courseId=${courseId}`);
+      return;
+    }
+
+    navigate(`/payment/success?paymentId=${payment._id}&courseId=${courseId}`);
   };
 
   const handlePaymentError = (errorMessage: string) => {

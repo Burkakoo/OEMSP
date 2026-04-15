@@ -5,7 +5,7 @@
 
 import session, { SessionOptions } from 'express-session';
 import { RedisStore } from 'connect-redis';
-import { getRedisClient } from './redis.config';
+import { getOptionalRedisClient, isUsingMemoryRedis } from './redis.config';
 import { env, isProduction } from './env.config';
 
 /**
@@ -24,7 +24,7 @@ export interface SessionConfig {
     sameSite: 'strict' | 'lax' | 'none';
     domain?: string;
   };
-  store: RedisStore;
+  store?: session.Store;
 }
 
 /**
@@ -40,12 +40,15 @@ export const SESSION_TTL = {
  * Creates Redis store for session storage
  * @returns RedisStore instance
  */
-function createRedisStore(): RedisStore {
-  const redisClient = getRedisClient();
+function createRedisStore(): RedisStore | undefined {
+  const redisClient = getOptionalRedisClient();
+  if (!redisClient || isUsingMemoryRedis()) {
+    return undefined;
+  }
 
   // Create Redis store with connect-redis
   const store = new RedisStore({
-    client: redisClient,
+    client: redisClient as any,
     prefix: 'session:', // Prefix for session keys in Redis
     ttl: SESSION_TTL.DEFAULT / 1000, // TTL in seconds (24 hours)
     disableTouch: false, // Enable session TTL refresh on access
@@ -97,12 +100,13 @@ export function createSessionConfig(options?: Partial<SessionOptions>): SessionO
       domain: undefined,
     },
 
-    // Redis store for session data
-    store,
-
     // Apply any custom options
     ...options,
   };
+
+  if (store) {
+    config.store = store;
+  }
 
   return config;
 }
@@ -374,7 +378,13 @@ export async function getSessionStats(): Promise<{
   totalSessions: number;
   activeSessions: number;
 }> {
-  const redisClient = getRedisClient();
+  const redisClient = getOptionalRedisClient();
+  if (!redisClient || isUsingMemoryRedis()) {
+    return {
+      totalSessions: 0,
+      activeSessions: 0,
+    };
+  }
 
   try {
     // Count session keys in Redis

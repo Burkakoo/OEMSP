@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import axios from 'axios';
 import Payment, {
   MOBILE_PAYMENT_METHODS,
   PurchaseType,
@@ -15,6 +16,7 @@ import { getCache, setCache, deleteCache } from '../utils/cache.utils';
 import { getCouponByCode, incrementCouponUsage } from './coupon.service';
 import { applyCouponToPriceQuote, getCourseSalePriceQuote, roundCurrencyAmount } from '../utils/pricing.utils';
 import { createTriggeredNotification } from './notification.service';
+import { env } from '../config/env.config';
 
 const CACHE_TTL = 300; // 5 minutes
 
@@ -56,6 +58,15 @@ export interface PaymentQuote {
     discountType: string;
     discountValue: number;
   };
+}
+
+interface PaymentGatewayResult {
+  success: boolean;
+  transactionId: string;
+  status?: PaymentStatus;
+  error?: string;
+  message?: string;
+  gatewayResponse?: Record<string, unknown>;
 }
 
 const resolvePaymentQuote = async (
@@ -127,6 +138,70 @@ const validateMobileMoneyPhone = (phoneNumber?: string, paymentMethod?: PaymentM
   }
 };
 
+const getMpesaBaseUrl = (): string =>
+  env.MPESA_ENVIRONMENT === 'sandbox'
+    ? 'https://sandbox.safaricom.co.et'
+    : 'https://api.safaricom.co.et';
+
+const getMpesaCredentialPair = (): { consumerKey: string; consumerSecret: string } => {
+  const consumerKey = (
+    env.MPESA_CONSUMER_KEY ||
+    env.MPESA_API_KEY ||
+    process.env.MPESA_CONSUMER_KEY ||
+    process.env.MPESA_API_KEY ||
+    ''
+  ).trim();
+  const consumerSecret = (
+    env.MPESA_CONSUMER_SECRET ||
+    env.MPESA_PUBLIC_KEY ||
+    process.env.MPESA_CONSUMER_SECRET ||
+    process.env.MPESA_PUBLIC_KEY ||
+    ''
+  ).trim();
+
+  const configErrors: string[] = [];
+
+  if (!consumerKey || /^https?:\/\//i.test(consumerKey)) {
+    configErrors.push('set MPESA_CONSUMER_KEY (or MPESA_API_KEY) to your OAuth consumer key');
+  }
+
+  if (!consumerSecret || /^https?:\/\//i.test(consumerSecret)) {
+    configErrors.push('set MPESA_CONSUMER_SECRET (or MPESA_PUBLIC_KEY) to your OAuth consumer secret');
+  }
+
+  if (!env.MPESA_SHORTCODE?.trim()) {
+    configErrors.push('set MPESA_SHORTCODE');
+  }
+
+  if (!env.MPESA_PASSKEY?.trim()) {
+    configErrors.push('set MPESA_PASSKEY');
+  }
+
+  if (configErrors.length > 0) {
+    throw new Error(`M-PESA configuration error: ${configErrors.join('; ')}`);
+  }
+
+  return { consumerKey, consumerSecret };
+};
+
+const buildMpesaCallbackUrl = (): string => {
+  const baseUrl = (env.PUBLIC_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.BASE_URL || '').trim();
+
+  if (!baseUrl) {
+    throw new Error(
+      'M-PESA configuration error: set PUBLIC_BASE_URL to a public HTTPS URL that can receive callbacks'
+    );
+  }
+
+  if (/localhost|127\.0\.0\.1/i.test(baseUrl)) {
+    throw new Error(
+      'M-PESA configuration error: PUBLIC_BASE_URL cannot point to localhost because Safaricom cannot reach it'
+    );
+  }
+
+  return `${baseUrl.replace(/\/+$/, '')}/api/v1/payments/mpesa/callback`;
+};
+
 /**
  * Process Stripe payment (placeholder)
  * TODO: Implement actual Stripe integration
@@ -135,7 +210,7 @@ const processStripePayment = async (
   amount: number,
   currency: string,
   metadata: any
-): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+): Promise<PaymentGatewayResult> => {
   // Placeholder implementation
   // In production, use Stripe SDK:
   // const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -157,7 +232,7 @@ const processPayPalPayment = async (
   amount: number,
   currency: string,
   metadata: any
-): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+): Promise<PaymentGatewayResult> => {
   console.log('Processing PayPal payment:', { amount, currency, metadata });
 
   return {
@@ -174,7 +249,7 @@ const processTelebirrPayment = async (
   amount: number,
   phoneNumber: string,
   metadata: any
-): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+): Promise<PaymentGatewayResult> => {
   // Placeholder implementation
   // In production, integrate with Telebirr API
 
@@ -194,7 +269,7 @@ const processCBEBirrPayment = async (
   amount: number,
   phoneNumber: string,
   metadata: any
-): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+): Promise<PaymentGatewayResult> => {
   // Placeholder implementation
   console.log('Processing CBE Birr payment:', { amount, phoneNumber, metadata });
 
@@ -212,13 +287,97 @@ const processGenericMobileMoneyPayment = async (
   phoneNumber: string,
   provider: PaymentMethod,
   metadata: any
-): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+): Promise<PaymentGatewayResult> => {
   console.log(`Processing ${provider} payment:`, { amount, phoneNumber, metadata });
 
   return {
     success: true,
     transactionId: generateTransactionId(),
   };
+};
+
+/**
+ * Process M-PESA Ethiopia payment
+ * TODO: Implement actual M-PESA API integration
+ */
+const processMpesaPayment = async (
+  amount: number,
+  phoneNumber: string,
+  metadata: any
+): Promise<PaymentGatewayResult> => {
+  try {
+    const baseUrl = getMpesaBaseUrl();
+    const { consumerKey, consumerSecret } = getMpesaCredentialPair();
+    const callbackUrl = buildMpesaCallbackUrl();
+
+    // Step 1: Get access token
+    const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+    const tokenResponse = await axios.get(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+      headers: {
+        'Authorization': `Basic ${auth}`,
+      },
+    });
+
+    const accessToken = tokenResponse.data.access_token;
+
+    // Step 2: Initiate STK Push
+    const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3);
+    const password = Buffer.from(`${env.MPESA_SHORTCODE}${env.MPESA_PASSKEY}${timestamp}`).toString('base64');
+
+    const stkPushData = {
+      BusinessShortCode: env.MPESA_SHORTCODE,
+      Password: password,
+      Timestamp: timestamp,
+      TransactionType: 'CustomerPayBillOnline',
+      Amount: Math.round(amount),
+      PartyA: phoneNumber.replace('+', ''), // Remove + from phone number
+      PartyB: env.MPESA_SHORTCODE,
+      PhoneNumber: phoneNumber.replace('+', ''),
+      CallBackURL: callbackUrl,
+      AccountReference: `Course-${metadata.courseId}`,
+      TransactionDesc: `Payment for ${metadata.courseTitle || 'course purchase'}`,
+    };
+
+    const stkResponse = await axios.post(`${baseUrl}/mpesa/stkpush/v1/processrequest`, stkPushData, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (stkResponse.data.ResponseCode === '0') {
+      return {
+        success: true,
+        transactionId: stkResponse.data.CheckoutRequestID,
+        status: PaymentStatus.PENDING,
+        message: stkResponse.data.CustomerMessage || 'M-PESA prompt sent to your phone',
+        gatewayResponse: {
+          MerchantRequestID: stkResponse.data.MerchantRequestID,
+          CheckoutRequestID: stkResponse.data.CheckoutRequestID,
+          ResponseCode: stkResponse.data.ResponseCode,
+          ResponseDescription: stkResponse.data.ResponseDescription,
+          CustomerMessage: stkResponse.data.CustomerMessage,
+        },
+      };
+    } else {
+      return {
+        success: false,
+        transactionId: generateTransactionId(),
+        error: stkResponse.data.CustomerMessage || 'M-PESA payment failed',
+      };
+    }
+  } catch (error: any) {
+    console.error('M-PESA payment error:', error.response?.data || error.message);
+    return {
+      success: false,
+      transactionId: generateTransactionId(),
+      error:
+        error.response?.data?.errorMessage ||
+        error.response?.data?.error_description ||
+        error.message ||
+        'M-PESA service unavailable',
+    };
+  }
 };
 
 /**
@@ -229,7 +388,7 @@ const processBankPayment = async (
   amount: number,
   bank: PaymentMethod,
   metadata: any
-): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+): Promise<PaymentGatewayResult> => {
   // Placeholder implementation
   console.log(`Processing ${bank} payment:`, { amount, metadata });
 
@@ -248,7 +407,7 @@ const routePayment = async (
   paymentMethod: PaymentMethod,
   phoneNumber?: string,
   metadata?: any
-): Promise<{ success: boolean; transactionId: string; error?: string }> => {
+): Promise<PaymentGatewayResult> => {
   switch (paymentMethod) {
     case PaymentMethod.COUPON:
       return {
@@ -272,8 +431,11 @@ const routePayment = async (
       if (!phoneNumber) throw new Error('Phone number required for CBE Birr');
       return processCBEBirrPayment(amount, phoneNumber, metadata);
 
-    case PaymentMethod.MOBILE_MONEY:
     case PaymentMethod.MPESA:
+      if (!phoneNumber) throw new Error('Phone number required for M-PESA');
+      return processMpesaPayment(amount, phoneNumber, metadata);
+
+    case PaymentMethod.MOBILE_MONEY:
     case PaymentMethod.MTN_MOMO:
     case PaymentMethod.AIRTEL_MONEY:
     case PaymentMethod.ORANGE_MONEY:
@@ -364,15 +526,16 @@ export const processPayment = async (paymentData: {
     expectedAmount,
     normalizedCurrency,
     normalizedPaymentMethod,
-    paymentData.phoneNumber,
-    {
-      userId: paymentData.userId,
-      courseId: paymentData.courseId,
-      couponCode: quote.appliedCoupon?.code,
-      originalAmount: quote.basePrice,
-      discountAmount: quote.saleDiscountAmount + quote.couponDiscountAmount,
-    }
-  );
+      paymentData.phoneNumber,
+      {
+        userId: paymentData.userId,
+        courseId: paymentData.courseId,
+        courseTitle: quote.courseTitle,
+        couponCode: quote.appliedCoupon?.code,
+        originalAmount: quote.basePrice,
+        discountAmount: quote.saleDiscountAmount + quote.couponDiscountAmount,
+      }
+    );
 
   if (!paymentResult.success) {
     // Create failed payment record
@@ -419,6 +582,7 @@ export const processPayment = async (paymentData: {
   }
 
   // Create successful payment record
+  const paymentStatus = paymentResult.status || PaymentStatus.COMPLETED;
   const payment = await Payment.create({
     userId: paymentData.userId,
     courseId: paymentData.courseId,
@@ -431,14 +595,14 @@ export const processPayment = async (paymentData: {
     currency: normalizedCurrency,
     purchaseType: PurchaseType.COURSE,
     paymentMethod: normalizedPaymentMethod,
-    status: PaymentStatus.COMPLETED,
+    status: paymentStatus,
     transactionId: paymentResult.transactionId,
-    completedAt: new Date(),
+    completedAt: paymentStatus === PaymentStatus.COMPLETED ? new Date() : undefined,
     metadata: {
       ipAddress: paymentData.ipAddress,
       userAgent: paymentData.userAgent,
       phoneNumber: paymentData.phoneNumber,
-      gatewayResponse: paymentResult,
+      gatewayResponse: paymentResult.gatewayResponse || paymentResult,
     },
   });
 
@@ -446,26 +610,28 @@ export const processPayment = async (paymentData: {
   await deleteCache(`payment:${payment._id}`);
   await deleteCache(`payments:user:${paymentData.userId}`);
 
-  if (quote.appliedCoupon?.id) {
+  if (paymentStatus === PaymentStatus.COMPLETED && quote.appliedCoupon?.id) {
     await incrementCouponUsage(quote.appliedCoupon.id);
   }
 
-  try {
-    const user = await User.findById(paymentData.userId).select('firstName lastName');
-    await createTriggeredNotification({
-      userId: paymentData.userId,
-      type: NotificationType.PAYMENT_SUCCESS,
-      title: 'Payment successful',
-      message: `Your payment for ${quote.courseTitle} was completed successfully.`,
-      data: {
-        courseTitle: quote.courseTitle,
-        amount: expectedAmount,
-        currency: normalizedCurrency,
-        studentName: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
-      },
-    });
-  } catch (notificationError) {
-    console.error('Failed to send payment success notification:', notificationError);
+  if (paymentStatus === PaymentStatus.COMPLETED) {
+    try {
+      const user = await User.findById(paymentData.userId).select('firstName lastName');
+      await createTriggeredNotification({
+        userId: paymentData.userId,
+        type: NotificationType.PAYMENT_SUCCESS,
+        title: 'Payment successful',
+        message: `Your payment for ${quote.courseTitle} was completed successfully.`,
+        data: {
+          courseTitle: quote.courseTitle,
+          amount: expectedAmount,
+          currency: normalizedCurrency,
+          studentName: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
+        },
+      });
+    } catch (notificationError) {
+      console.error('Failed to send payment success notification:', notificationError);
+    }
   }
 
   return payment;

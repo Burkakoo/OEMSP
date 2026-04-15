@@ -655,6 +655,28 @@ describe('Payment Model', () => {
       expect(payment.metadata.phoneNumber).toBe('+251923456789');
     });
 
+    it('should accept MPESA payment method with phone number', async () => {
+      const paymentData = {
+        userId: testUser._id,
+        courseId: testCourse._id,
+        amount: 5000,
+        originalAmount: 5000,
+        discountAmount: 0,
+        currency: 'ETB',
+        paymentMethod: PaymentMethod.MPESA,
+        transactionId: 'txn_mpesa',
+        metadata: {
+          ipAddress: '192.168.1.1',
+          userAgent: 'Mozilla/5.0',
+          phoneNumber: '+251911223344',
+        },
+      };
+
+      const payment = await Payment.create(paymentData);
+      expect(payment.paymentMethod).toBe(PaymentMethod.MPESA);
+      expect(payment.metadata.phoneNumber).toBe('+251911223344');
+    });
+
     it('should accept CBE payment method', async () => {
       const paymentData = {
         userId: testUser._id,
@@ -744,6 +766,27 @@ describe('Payment Model', () => {
 
       await expect(Payment.create(paymentData)).rejects.toThrow(
         'Phone number is required for cbe_birr payment method'
+      );
+    });
+
+    it('should fail when MPESA payment method is used without phone number', async () => {
+      const paymentData = {
+        userId: testUser._id,
+        courseId: testCourse._id,
+        amount: 5000,
+        originalAmount: 5000,
+        discountAmount: 0,
+        currency: 'ETB',
+        paymentMethod: PaymentMethod.MPESA,
+        transactionId: 'txn_mpesa_no_phone',
+        metadata: {
+          ipAddress: '192.168.1.1',
+          userAgent: 'Mozilla/5.0',
+        },
+      };
+
+      await expect(Payment.create(paymentData)).rejects.toThrow(
+        'Phone number is required for mpesa payment method'
       );
     });
 

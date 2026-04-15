@@ -3,8 +3,8 @@
  * Loads and validates environment variables with TypeScript typing
  */
 
-import dotenv from 'dotenv';
-import path from 'path';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
 
 // Load environment variables from .env file
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -30,19 +30,32 @@ export interface EnvConfig {
   SESSION_SECRET: string;
 
   // Payment Gateway Configuration
-  STRIPE_SECRET_KEY: string;
-  STRIPE_WEBHOOK_SECRET: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  TELEBIRR_API_KEY?: string;
+  CBE_BIRR_API_KEY?: string;
+  MPESA_API_KEY?: string;
+  MPESA_PUBLIC_KEY?: string;
+  MPESA_CONSUMER_KEY?: string;
+  MPESA_CONSUMER_SECRET?: string;
+  MPESA_ENVIRONMENT: string;
+  MPESA_SHORTCODE?: string;
+  MPESA_PASSKEY?: string;
+  PUBLIC_BASE_URL?: string;
+  RENDER_EXTERNAL_URL?: string;
 
   // AWS Configuration
-  AWS_ACCESS_KEY_ID: string;
-  AWS_SECRET_ACCESS_KEY: string;
-  AWS_REGION: string;
-  AWS_S3_BUCKET: string;
+  AWS_ACCESS_KEY_ID?: string;
+  AWS_SECRET_ACCESS_KEY?: string;
+  AWS_REGION?: string;
+  AWS_S3_BUCKET?: string;
 
-  // Email Service Configuration (Gmail SMTP)
-  EMAIL_USER: string;
-  EMAIL_PASS: string;
-  EMAIL_FROM: string;
+  // Email Service Configuration
+  EMAIL_PROVIDER: 'smtp' | 'resend';
+  RESEND_API_KEY?: string;
+  EMAIL_USER?: string;
+  EMAIL_PASS?: string;
+  EMAIL_FROM?: string;
 
   // SMS Service Configuration (Africa's Talking)
   AFRICAS_TALKING_USERNAME: string;
@@ -54,7 +67,7 @@ export interface EnvConfig {
   FIREBASE_CLIENT_EMAIL: string;
 
   // Redis Configuration
-  REDIS_URL: string;
+  REDIS_URL?: string;
 
   // CORS Configuration
   CORS_ORIGIN: string;
@@ -126,7 +139,24 @@ function validateEnvConfig(): EnvConfig {
   try {
     const nodeEnv = validateNodeEnv(getEnvVariable('NODE_ENV', 'development'));
     const isTestEnv = nodeEnv === 'test';
-    const emailUser = getEnvVariable('EMAIL_USER', isTestEnv ? 'test@example.com' : '');
+    const emailUser = process.env.EMAIL_USER || (isTestEnv ? 'test@example.com' : '');
+
+    const rawEmailProvider = process.env.EMAIL_PROVIDER?.trim().toLowerCase();
+    const emailProvider = rawEmailProvider
+      ? rawEmailProvider === 'smtp' || rawEmailProvider === 'resend'
+        ? rawEmailProvider
+        : null
+      : process.env.RESEND_API_KEY
+      ? 'resend'
+      : 'smtp';
+
+    if (!emailProvider) {
+      throw new Error('EMAIL_PROVIDER must be either "smtp" or "resend"');
+    }
+
+    if (emailProvider === 'resend' && !process.env.RESEND_API_KEY && !isTestEnv) {
+      throw new Error('RESEND_API_KEY is required when EMAIL_PROVIDER=resend');
+    }
 
     const config: EnvConfig = {
       // Server Configuration
@@ -146,19 +176,36 @@ function validateEnvConfig(): EnvConfig {
       SESSION_SECRET: getEnvVariable('SESSION_SECRET', isTestEnv ? 'test-session-secret-key-32-chars' : ''),
 
       // Payment Gateway Configuration
-      STRIPE_SECRET_KEY: getEnvVariable('STRIPE_SECRET_KEY', isTestEnv ? 'test-stripe-key' : ''),
-      STRIPE_WEBHOOK_SECRET: getEnvVariable('STRIPE_WEBHOOK_SECRET', isTestEnv ? 'test-webhook-secret' : ''),
+      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || (isTestEnv ? 'test-stripe-key' : ''),
+      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || (isTestEnv ? 'test-webhook-secret' : ''),
+      TELEBIRR_API_KEY: process.env.TELEBIRR_API_KEY || (isTestEnv ? 'test-telebirr-api-key' : ''),
+      CBE_BIRR_API_KEY: process.env.CBE_BIRR_API_KEY || (isTestEnv ? 'test-cbe-birr-api-key' : ''),
+      MPESA_API_KEY: process.env.MPESA_API_KEY || (isTestEnv ? 'test-mpesa-api-key' : ''),
+      MPESA_PUBLIC_KEY: process.env.MPESA_PUBLIC_KEY || (isTestEnv ? 'test-mpesa-public-key' : ''),
+      MPESA_CONSUMER_KEY: process.env.MPESA_CONSUMER_KEY || (isTestEnv ? 'test-mpesa-consumer-key' : ''),
+      MPESA_CONSUMER_SECRET: process.env.MPESA_CONSUMER_SECRET || (isTestEnv ? 'test-mpesa-consumer-secret' : ''),
+      MPESA_ENVIRONMENT: process.env.MPESA_ENVIRONMENT || (isTestEnv ? 'sandbox' : 'production'),
+      MPESA_SHORTCODE: process.env.MPESA_SHORTCODE || (isTestEnv ? '174379' : ''),
+      MPESA_PASSKEY: process.env.MPESA_PASSKEY || (isTestEnv ? 'test-passkey' : ''),
+      PUBLIC_BASE_URL:
+        process.env.PUBLIC_BASE_URL ||
+        process.env.RENDER_EXTERNAL_URL ||
+        process.env.BASE_URL ||
+        (isTestEnv ? 'http://localhost:5000' : ''),
+      RENDER_EXTERNAL_URL: process.env.RENDER_EXTERNAL_URL || (isTestEnv ? 'http://localhost:5000' : ''),
 
       // AWS Configuration
-      AWS_ACCESS_KEY_ID: getEnvVariable('AWS_ACCESS_KEY_ID', isTestEnv ? 'test-aws-key' : ''),
-      AWS_SECRET_ACCESS_KEY: getEnvVariable('AWS_SECRET_ACCESS_KEY', isTestEnv ? 'test-aws-secret' : ''),
-      AWS_REGION: getEnvVariable('AWS_REGION', 'us-east-1'),
-      AWS_S3_BUCKET: getEnvVariable('AWS_S3_BUCKET', isTestEnv ? 'test-bucket' : ''),
+      AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || (isTestEnv ? 'test-aws-key' : ''),
+      AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || (isTestEnv ? 'test-aws-secret' : ''),
+      AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+      AWS_S3_BUCKET: process.env.AWS_S3_BUCKET || (isTestEnv ? 'test-bucket' : ''),
 
       // Email Service Configuration
+      EMAIL_PROVIDER: emailProvider as 'smtp' | 'resend',
+      RESEND_API_KEY: process.env.RESEND_API_KEY || (isTestEnv ? 'test-resend-api-key' : ''),
       EMAIL_USER: emailUser,
-      EMAIL_PASS: getEnvVariable('EMAIL_PASS', isTestEnv ? 'test-app-password' : ''),
-      EMAIL_FROM: getEnvVariable('EMAIL_FROM', emailUser),
+      EMAIL_PASS: process.env.EMAIL_PASS || (isTestEnv ? 'test-app-password' : ''),
+      EMAIL_FROM: process.env.EMAIL_FROM || emailUser,
 
       // SMS Service Configuration (Africa's Talking) - optional in development
       AFRICAS_TALKING_USERNAME: process.env.AFRICAS_TALKING_USERNAME || (isTestEnv ? 'test-username' : ''),
@@ -170,7 +217,7 @@ function validateEnvConfig(): EnvConfig {
       FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || (isTestEnv ? 'test@test.com' : ''),
 
       // Redis Configuration
-      REDIS_URL: getEnvVariable('REDIS_URL', isTestEnv ? 'redis://localhost:6379' : ''),
+      REDIS_URL: process.env.REDIS_URL || (isTestEnv ? 'redis://localhost:6379' : ''),
 
       // CORS Configuration
       CORS_ORIGIN: getEnvVariable('CORS_ORIGIN', 'http://localhost:3000'),
@@ -204,7 +251,7 @@ function validateEnvConfig(): EnvConfig {
       }
 
       // Validate Redis connection string format
-      if (!config.REDIS_URL.startsWith('redis')) {
+      if (config.REDIS_URL && !config.REDIS_URL.startsWith('redis')) {
         throw new Error('REDIS_URL must be a valid Redis connection string (starting with redis://)');
       }
     }

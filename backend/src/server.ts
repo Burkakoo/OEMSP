@@ -46,6 +46,7 @@ import auditLogRoutes from './routes/auditLog.routes';
 import platformSettingsRoutes from './routes/platformSettings.routes';
 
 const app: Application = express();
+app.set('trust proxy', 1);
 
 // Security Middleware (applied first)
 app.use(configureHelmet());
@@ -67,6 +68,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(sanitizeInput);
 app.use(preventParameterPollution);
 
+// Health routes stay ahead of the global rate limiter so Render probes are never throttled.
+app.use('/health', healthRoutes);
+
 // Rate limiting (general)
 app.use(generalRateLimiter);
 
@@ -75,40 +79,26 @@ app.use(auditLogMiddleware);
 
 // Note: Session middleware will be added after Redis connection is established
 
-// Health check routes (before rate limiting for monitoring)
-app.use('/health', healthRoutes);
-
-/**
- * Starts the Express server and establishes database connection
- */
 async function startServer(): Promise<void> {
   try {
-    // Set up database connection event handlers
     setupConnectionEventHandlers();
 
-    // Connect to database
     await connectDatabase();
 
-    // Connect to Redis
-    console.log('🔌 Connecting to Redis...');
+    console.log('Connecting to Redis or fallback storage...');
     await connectRedis();
-    console.log('✅ Redis connected successfully');
+    console.log('Redis-compatible storage ready');
 
-    // Set up Redis graceful shutdown
     setupRedisShutdown();
 
-    // Add session middleware after Redis connection
     app.use(createSessionMiddleware());
-    console.log('✅ Session middleware configured');
+    console.log('Session middleware configured');
 
-    // Set up session cleanup
     setupSessionCleanup();
 
-    // API Routes
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/users', userRoutes);
     app.use('/api/v1/courses', courseRoutes);
-    // Module routes already include `/modules`, `/lessons`, `/attachments` path segments.
     app.use('/api/v1', moduleRoutes);
     app.use('/api/v1/enrollments', enrollmentRoutes);
     app.use('/api/v1/quizzes', quizRoutes);
@@ -124,26 +114,29 @@ async function startServer(): Promise<void> {
     app.use('/api/v1/assignments', assignmentRoutes);
     app.use('/api/v1/audit-logs', auditLogRoutes);
     app.use('/api/v1/platform-settings', platformSettingsRoutes);
-    console.log('✅ API routes configured');
+    console.log('API routes configured');
 
-    // Start Express server
     const PORT = env.PORT || 5000;
+    const publicBaseUrl =
+      env.PUBLIC_BASE_URL ||
+      process.env.RENDER_EXTERNAL_URL ||
+      `http://localhost:${PORT}`;
+
     app.listen(PORT, () => {
-      console.log('✅ Server started successfully');
-      console.log(`   Port: ${PORT}`);
-      console.log(`   Environment: ${env.NODE_ENV}`);
-      console.log(`   Health check: http://localhost:${PORT}/health`);
-      console.log(`   Detailed health: http://localhost:${PORT}/health/detailed`);
-      console.log(`   Readiness probe: http://localhost:${PORT}/health/ready`);
-      console.log(`   Liveness probe: http://localhost:${PORT}/health/live`);
+      console.log('Server started successfully');
+      console.log(`Port: ${PORT}`);
+      console.log(`Environment: ${env.NODE_ENV}`);
+      console.log(`Health check: ${publicBaseUrl}/health`);
+      console.log(`Detailed health: ${publicBaseUrl}/health/detailed`);
+      console.log(`Readiness probe: ${publicBaseUrl}/health/ready`);
+      console.log(`Liveness probe: ${publicBaseUrl}/health/live`);
     });
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    console.error('Failed to start server:', error);
     process.exit(1);
   }
 }
 
-// Start the server
 startServer();
 
 export { app };

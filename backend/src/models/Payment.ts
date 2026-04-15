@@ -44,6 +44,7 @@ export const SUPPORTED_CURRENCIES = ['USD', 'EUR', 'ETB'];
 export const ETHIOPIAN_MOBILE_PAYMENT_METHODS = [
   PaymentMethod.TELEBIRR,
   PaymentMethod.CBE_BIRR,
+  PaymentMethod.MPESA,
 ];
 
 export const MOBILE_PAYMENT_METHODS = [

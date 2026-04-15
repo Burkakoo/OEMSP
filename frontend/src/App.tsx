@@ -35,6 +35,7 @@ import CreateQuizPage from '@pages/CreateQuizPage';
 import EditQuizPage from '@pages/EditQuizPage';
 import CheckoutPage from '@pages/CheckoutPage';
 import PaymentSuccessPage from '@pages/PaymentSuccessPage';
+import PaymentPendingPage from '@pages/PaymentPendingPage';
 import PaymentFailurePage from '@pages/PaymentFailurePage';
 import ProtectedRoute from '@components/auth/ProtectedRoute';
 
@@ -235,6 +236,15 @@ const App: React.FC = () => {
           }
         />
         
+        <Route
+          path="/payment/pending"
+          element={
+            <ProtectedRoute requiredRole="student">
+              <PaymentPendingPage />
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/payment/success"
           element={

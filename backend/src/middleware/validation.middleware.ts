@@ -152,7 +152,7 @@ export const validatePaymentProcessing: ValidationChain[] = [
     .isIn(['USD', 'EUR', 'ETB'])
     .withMessage('Currency must be USD, EUR, or ETB'),
   body('paymentMethod')
-    .isIn(['stripe', 'telebirr', 'cbe_birr', 'cbe', 'awash_bank', 'siinqee_bank'])
+    .isIn(['stripe', 'telebirr', 'cbe_birr', 'mpesa', 'cbe', 'awash_bank', 'siinqee_bank'])
     .withMessage('Invalid payment method'),
   body('phoneNumber')
     .optional()

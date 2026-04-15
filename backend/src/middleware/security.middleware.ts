@@ -41,7 +41,10 @@ export const configureHelmet = () => {
  * Only allows requests from specified origins
  */
 export const configureCORS = () => {
-  const whitelist = env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'];
+  const whitelist =
+    env.CORS_ORIGIN?.split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean) || ['http://localhost:3000'];
 
   const corsOptions: cors.CorsOptions = {
     origin: (origin, callback) => {
@@ -50,7 +53,7 @@ export const configureCORS = () => {
         return callback(null, true);
       }
 
-      if (whitelist.indexOf(origin) !== -1) {
+      if (whitelist.includes('*') || whitelist.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));

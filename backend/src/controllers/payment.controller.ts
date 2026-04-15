@@ -1,12 +1,19 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import * as paymentService from '../services/payment.service';
+import { createTriggeredNotification } from '../services/notification.service';
 import {
   PaymentMethod,
   PaymentStatus,
   ETHIOPIAN_MOBILE_PAYMENT_METHODS,
   MOBILE_PAYMENT_METHODS,
 } from '../models/Payment';
+import { NotificationType } from '../models/Notification';
+import Payment from '../models/Payment';
+import Enrollment from '../models/Enrollment';
+import User from '../models/User';
+import Course from '../models/Course';
+import { getCouponByCode, incrementCouponUsage } from '../services/coupon.service';
 
 /**
  * Payment Controllers
@@ -362,5 +369,148 @@ export const refundPayment = async (req: AuthRequest, res: Response): Promise<vo
       success: false,
       message: error.message || 'Failed to refund payment',
     });
+  }
+};
+
+/**
+ * M-PESA payment callback
+ * POST /api/v1/payments/mpesa/callback
+ */
+export const mpesaCallback = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const callbackData = req.body as any;
+
+    // Log the callback for debugging
+    console.log('M-PESA Callback received:', JSON.stringify(callbackData, null, 2));
+
+    // Extract relevant data from callback
+    const stkCallback = callbackData?.Body?.stkCallback;
+    if (!stkCallback?.CheckoutRequestID) {
+      res.status(400).json({ success: false, message: 'Invalid M-PESA callback payload' });
+      return;
+    }
+
+    const {
+      CheckoutRequestID,
+      ResultCode,
+      ResultDesc,
+      CallbackMetadata,
+    } = stkCallback;
+
+    // Find the payment by transaction ID
+    const payment = await Payment.findOne({ transactionId: CheckoutRequestID });
+
+    if (!payment) {
+      console.error('Payment not found for CheckoutRequestID:', CheckoutRequestID);
+      res.status(200).json({ success: false, message: 'Payment not found' });
+      return;
+    }
+
+    if (ResultCode === 0) {
+      // Payment successful
+      const metadata = CallbackMetadata?.Item || [];
+      const mpesaReceiptNumber = metadata.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value;
+      const transactionDate = metadata.find((item: any) => item.Name === 'TransactionDate')?.Value;
+      const phoneNumber = metadata.find((item: any) => item.Name === 'PhoneNumber')?.Value;
+      const wasAlreadyCompleted = payment.status === PaymentStatus.COMPLETED;
+
+      // Update payment status
+      payment.status = PaymentStatus.COMPLETED;
+      payment.completedAt = payment.completedAt || new Date();
+      payment.metadata.gatewayResponse = {
+        ...payment.metadata.gatewayResponse,
+        callback: callbackData,
+        mpesaReceiptNumber,
+        transactionDate,
+        phoneNumber,
+      };
+
+      await payment.save();
+
+      if (!wasAlreadyCompleted && payment.couponCode) {
+        try {
+          const coupon = await getCouponByCode(payment.courseId.toString(), payment.couponCode);
+          if (coupon?._id) {
+            await incrementCouponUsage(coupon._id.toString());
+          }
+        } catch (couponError) {
+          console.error('Failed to increment coupon usage after M-PESA callback:', couponError);
+        }
+      }
+
+      const existingEnrollment = await Enrollment.findOne({
+        studentId: payment.userId,
+        courseId: payment.courseId,
+      }).select('_id');
+
+      if (!existingEnrollment) {
+        await Enrollment.create({
+          studentId: payment.userId,
+          courseId: payment.courseId,
+          paymentId: payment._id,
+        });
+      }
+
+      // Send success notification
+      if (!wasAlreadyCompleted) {
+        try {
+        const user = await User.findById(payment.userId).select('firstName lastName');
+        const course = await Course.findById(payment.courseId).select('title');
+
+        await createTriggeredNotification({
+          userId: payment.userId.toString(),
+          type: NotificationType.PAYMENT_SUCCESS,
+          title: 'Payment successful',
+          message: `Your M-PESA payment for ${course?.title} was completed successfully.`,
+          data: {
+            courseTitle: course?.title,
+            amount: payment.amount,
+            currency: payment.currency,
+            studentName: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
+            mpesaReceiptNumber,
+          },
+        });
+        } catch (notificationError) {
+          console.error('Failed to send M-PESA success notification:', notificationError);
+        }
+      }
+
+      res.status(200).json({ success: true, message: 'Payment completed successfully' });
+    } else {
+      // Payment failed
+      payment.status = PaymentStatus.FAILED;
+      payment.metadata.gatewayResponse = {
+        ...payment.metadata.gatewayResponse,
+        callback: callbackData,
+        error: ResultDesc,
+      };
+
+      await payment.save();
+
+      // Send failure notification
+      try {
+        const course = await Course.findById(payment.courseId).select('title');
+
+        await createTriggeredNotification({
+          userId: payment.userId.toString(),
+          type: NotificationType.PAYMENT_FAILED,
+          title: 'Payment failed',
+          message: `Your M-PESA payment for ${course?.title} could not be completed.`,
+          data: {
+            courseTitle: course?.title,
+            amount: payment.amount,
+            currency: payment.currency,
+            reason: ResultDesc,
+          },
+        });
+      } catch (notificationError) {
+        console.error('Failed to send M-PESA failure notification:', notificationError);
+      }
+
+      res.status(200).json({ success: false, message: ResultDesc });
+    }
+  } catch (error: any) {
+    console.error('M-PESA callback processing error:', error);
+    res.status(500).json({ success: false, message: 'Callback processing failed' });
   }
 };

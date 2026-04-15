@@ -18,6 +18,29 @@ cp .env.example .env
 npm run dev
 ```
 
+## Deploy On Render
+
+This backend is now set up for Render web services and includes a `render.yaml` blueprint at the repo root.
+
+### Fastest path
+
+1. Push this repo to GitHub.
+2. In Render, create a new Blueprint and point it to this repository.
+3. Render will detect `render.yaml` and create the `oemsp-backend` web service.
+4. Fill in the prompted environment variables:
+   - `DATABASE_URL`
+   - `CORS_ORIGIN`
+5. Deploy.
+
+### Notes
+
+- Health check path: `/health/live`
+- Redis is optional on Render now. If `REDIS_URL` is not set, the API uses in-memory fallback storage.
+- On Render free instances, that in-memory fallback is temporary because free web services spin down after 15 minutes idle and can restart at any time.
+- `PUBLIC_BASE_URL` is optional on Render because the app can fall back to `RENDER_EXTERNAL_URL`.
+- If you are not ready to deploy the frontend yet, you can temporarily set `CORS_ORIGIN=*` and tighten it later.
+- Render free web services do not support normal SMTP delivery for Gmail-based Nodemailer flows, so signup OTP and password-reset emails need a different email provider or a paid setup.
+
 ## Documentation
 
 ### Setup Guides

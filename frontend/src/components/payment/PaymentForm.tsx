@@ -18,13 +18,14 @@ import {
 import { useAppDispatch } from '@hooks/useAppDispatch';
 import { processPayment } from '@store/slices/paymentSlice';
 import { useLocalization } from '@/context/LocalizationContext';
+import { Payment } from '@/types/payment.types';
 
 interface PaymentFormProps {
   courseId: string;
   amount: number;
   currency: string;
   couponCode?: string;
-  onSuccess: (paymentId: string) => void;
+  onSuccess: (payment: Payment) => void;
   onError: (error: string) => void;
 }
 
@@ -90,7 +91,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
       };
 
       const result = await dispatch(processPayment(paymentData)).unwrap();
-      onSuccess(result._id);
+      onSuccess(result);
     } catch (error) {
       onError((error as Error).message);
     } finally {
@@ -131,7 +132,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
           label={t('phoneNumber')}
           value={phoneNumber}
           onChange={(e) => setPhoneNumber(e.target.value)}
-          placeholder="+254700000000"
+          placeholder="+251900000000"
           required
           margin="normal"
           helperText={t('phoneHelper')}

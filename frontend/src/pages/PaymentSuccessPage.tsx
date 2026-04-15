@@ -23,6 +23,7 @@ const PaymentSuccessPage: React.FC = () => {
 
   const paymentId = searchParams.get('paymentId');
   const courseId = searchParams.get('courseId');
+  const payment = currentPayment?._id === paymentId ? currentPayment : null;
 
   useEffect(() => {
     if (paymentId) {
@@ -32,7 +33,7 @@ const PaymentSuccessPage: React.FC = () => {
 
   useEffect(() => {
     const completeEnrollment = async () => {
-      if (!paymentId || !courseId || !currentPayment) {
+      if (!paymentId || !courseId || !payment || payment.status !== 'completed') {
         return;
       }
 
@@ -51,7 +52,7 @@ const PaymentSuccessPage: React.FC = () => {
     };
 
     void completeEnrollment();
-  }, [courseId, currentPayment, paymentId]);
+  }, [courseId, payment, paymentId]);
 
   if (isLoading) {
     return (
@@ -71,10 +72,28 @@ const PaymentSuccessPage: React.FC = () => {
     );
   }
 
-  if (!currentPayment) {
+  if (!payment) {
     return (
       <Container maxWidth="sm" sx={{ mt: 8 }}>
         <Alert severity="info">Payment information not found</Alert>
+      </Container>
+    );
+  }
+
+  if (payment.status === 'pending') {
+    return (
+      <Container maxWidth="sm" sx={{ mt: 8 }}>
+        <Alert severity="info">
+          This payment is still waiting for confirmation. Please finish the M-Pesa prompt on your phone.
+        </Alert>
+      </Container>
+    );
+  }
+
+  if (payment.status === 'failed') {
+    return (
+      <Container maxWidth="sm" sx={{ mt: 8 }}>
+        <Alert severity="error">This payment did not complete successfully.</Alert>
       </Container>
     );
   }
@@ -92,9 +111,9 @@ const PaymentSuccessPage: React.FC = () => {
         </Alert>
       )}
       <PaymentSuccess
-        transactionId={currentPayment.transactionId}
-        amount={currentPayment.amount}
-        currency={currentPayment.currency}
+        transactionId={payment.transactionId}
+        amount={payment.amount}
+        currency={payment.currency}
         courseId={courseId || undefined}
       />
     </Container>

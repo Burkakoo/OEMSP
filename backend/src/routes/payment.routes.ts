@@ -51,4 +51,11 @@ router.get('/', authenticate, paymentController.listPayments);
  */
 router.post('/:id/refund', authenticate, paymentController.refundPayment);
 
+/**
+ * @route   POST /api/v1/payments/mpesa/callback
+ * @desc    M-PESA payment callback
+ * @access  Public (Called by M-PESA)
+ */
+router.post('/mpesa/callback', paymentController.mpesaCallback);
+
 export default router;
