@@ -47,7 +47,7 @@ export const configureCORS = () => {
       .filter(Boolean) || ['http://localhost:3000'];
 
   const corsOptions: cors.CorsOptions = {
-    origin: (origin: string | undefined, callback: cors.CorsCallback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) {
         return callback(null, true);
