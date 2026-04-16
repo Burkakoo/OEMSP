@@ -2,6 +2,7 @@
   "name": "mern-education-platform-frontend",
   "version": "1.0.0",
   "description": "Frontend React application for MERN Education Platform",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "vite",
