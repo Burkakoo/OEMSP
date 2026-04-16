@@ -223,7 +223,12 @@ export const sendEmail = async (options: EmailOptions): Promise<{ success: boole
 
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Failed to send email:', error);
+    if (error instanceof Error) {
+      console.error('SMTP/Email Error:', error.message);
+      console.error('Error Stack:', error.stack);
+    } else {
+      console.error('Unknown Email Error:', error);
+    }
     return { success: false };
   }
 };

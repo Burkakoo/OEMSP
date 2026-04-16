@@ -157,6 +157,11 @@ class AuthService implements IAuthService {
       }
 
       // Create new user
+      if (existingUser) {
+        return { success: false, error: 'Email already registered' };
+      }
+
+      // Create new user
       const verificationCode = this.generateVerificationCode();
       const verificationExpires = new Date(Date.now() + this.EMAIL_VERIFICATION_CODE_TTL_MS);
 
@@ -170,13 +175,13 @@ class AuthService implements IAuthService {
         isEmailVerified: false,
         emailVerificationCode: verificationCode,
         emailVerificationCodeExpiresAt: verificationExpires,
-        // isApproved defaults based on role (false for instructors, true for others)
       });
 
       await user.save();
 
       // Send verification email (best effort)
       try {
+        console.log(`[DEBUG] Email verification code generated for ${user.email}: ${verificationCode}`);
         await this.sendVerificationEmail(user);
       } catch (err) {
         console.error('Failed to send verification email:', err);
@@ -473,6 +478,7 @@ class AuthService implements IAuthService {
 
       // Send OTP email (best effort)
       try {
+        console.log(`[DEBUG] Password reset code generated for ${normalizedEmail}: ${code}`);
         await this.sendPasswordResetCodeEmail(user, code);
       } catch (err) {
         console.error('Failed to send password reset OTP email:', err);
