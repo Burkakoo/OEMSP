@@ -71,6 +71,20 @@ app.use(preventParameterPollution);
 // Health routes stay ahead of the global rate limiter so Render probes are never throttled.
 app.use('/health', healthRoutes);
 
+// Root route for API status
+app.get('/', (_req, res) => {
+  res.json({
+    message: 'MERN Education Platform API is running',
+    version: '1.0.0',
+    status: 'healthy',
+    documentation: '/api/v1',
+    health: {
+      basic: '/health',
+      detailed: '/health/detailed',
+    },
+  });
+});
+
 // Rate limiting (general)
 app.use(generalRateLimiter);
 
